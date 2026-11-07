@@ -159,6 +159,9 @@ section.card.closed>.body{display:none}
       <div><i style="background:var(--brackish)"></i>Wells, springs, intakes</div>
       <div><i style="background:var(--fresh)"></i>Water works / utility</div>
       <div><i style="background:var(--waste)"></i>Wastewater treatment</div>
+      <div><i style="background:#d7301f;height:3px"></i>Power line (red high kV → yellow low)</div>
+      <div><i style="background:#ce93d8;border:1px solid #6a1b9a"></i>Substation</div>
+      <div><i style="background:#8d6e63"></i>Power plant (orange = solar)</div>
     </div>
   </div>
   <aside id="side">
@@ -353,7 +356,7 @@ const dossier=$('#dossier');
 const cards={};
 const GROUPS=[['site','Site'],['sources','Water sources & quantity'],['quality','Water quality'],['system','Existing water system'],['energy','Solar & plant sizing'],['coverage','Data coverage']];
 const groupEl={};let progressEl=null,progressItems={};
-const SRC_LABELS={loc:'Place & elevation (OSM, Open-Meteo)',solar:'Solar & rain (NASA POWER)',osm:'Water bodies & infrastructure (OpenStreetMap)',flow:'River discharge (GloFAS)',demand:'Community & demand',usgs:'USGS gauges & wells',wqp:'Water Quality Portal (chemistry, E. coli)',util:'EPA water utility',echo:'EPA ECHO wastewater',hubeau:"Hub'Eau (eau potable, nappes, rivières)",'co-irca':'INS SIVICAP (IRCA)','co-q':'IDEAM water quality','co-st':'IDEAM stations','co-sui':'Superservicios RUPS',whymap:'WHYMAP global hydrogeology',need:'Water access (WHO/UNICEF JMP)',desal:'Desalination plants nearby',gebco:'GEBCO sea depth','br-st':'ANA hydromet network','br-gw':'RIMAS groundwater wells','br-ete':'ANA sewage plants','br-note':'Brazil quality (pending)',wpdx:'WPdx water points',bgs:'Africa Groundwater Atlas (BGS)',portals:'National portals',nat:'National network',feed:'Feed-water sizing',cov:'Coverage report'};
+const SRC_LABELS={loc:'Place & elevation (OSM, Open-Meteo)',solar:'Solar & rain (NASA POWER)',osm:'Water bodies & infrastructure (OpenStreetMap)',flow:'River discharge (GloFAS)',demand:'Community & demand',usgs:'USGS gauges & wells',wqp:'Water Quality Portal (chemistry, E. coli)',util:'EPA water utility',echo:'EPA ECHO wastewater',hubeau:"Hub'Eau (eau potable, nappes, rivières)",'co-irca':'INS SIVICAP (IRCA)','co-q':'IDEAM water quality','co-st':'IDEAM stations','co-sui':'Superservicios RUPS',whymap:'WHYMAP global hydrogeology',need:'Water access (WHO/UNICEF JMP)',desal:'Desalination plants nearby',gebco:'GEBCO sea depth','br-st':'ANA hydromet network','br-gw':'RIMAS groundwater wells','br-ete':'ANA sewage plants','br-note':'Brazil quality (pending)',wpdx:'WPdx water points',bgs:'Africa Groundwater Atlas (BGS)',portals:'National portals',nat:'National network',grid:'Electricity grid (OSM, HIFLD, IPSE ZNI, World Bank)',feed:'Feed-water sizing',cov:'Coverage report'};
 let scanT0=0,scanTimer=null;
 function scaffold(){dossier.innerHTML='';progressEl=document.createElement('div');progressEl.className='status';progressEl.innerHTML='<div class="hd"><span>Scanning…</span><span class="t">0 s</span></div><ul></ul>';dossier.appendChild(progressEl);progressItems={};scanT0=Date.now();clearInterval(scanTimer);scanTimer=setInterval(()=>{const t=progressEl.querySelector('.hd .t');if(t&&!progressEl.classList.contains('complete'))t.textContent=Math.round((Date.now()-scanT0)/1000)+' s';},1000);for(const [id,label] of GROUPS){const g=document.createElement('div');g.className='grp';g.id='g-'+id;g.hidden=true;g.innerHTML=`<h3>${esc(label)}</h3>`;dossier.appendChild(g);groupEl[id]=g;}}
 function progress(id,state){if(!progressEl)return;let it=progressItems[id];if(!it){it=document.createElement('li');it.innerHTML=`<i></i><span>${esc(SRC_LABELS[id]||id)}</span><em class="ms"></em>`;it.dataset.t0=Date.now();progressEl.querySelector('ul').appendChild(it);progressItems[id]=it;}it.className=state;if(state!=='run')it.querySelector('.ms').textContent=((Date.now()-(+it.dataset.t0))/1000).toFixed(1)+' s';const n=Object.values(progressItems),d=n.filter(x=>x.className!=='run').length,bad=n.filter(x=>x.className==='err').length;progressEl.querySelector('.hd span').textContent=d<n.length?`Fetching ${d}/${n.length} sources…`:`Scan complete — ${n.length} sources${bad?`, ${bad} failed`:''}`;}
@@ -932,6 +935,79 @@ async function adBrazil(lat,lon,r,loc){
   return {utility,micro:ecoli,tds};
 }
 
+// ---------- electricity grid: proximity, reliability ----------
+const OVERPASS_MIRRORS=['https://overpass-api.de/api/interpreter','https://overpass.kumi.systems/api/interpreter','https://lz4.overpass-api.de/api/interpreter'];
+async function overpass(q,timeout=100000){let last=null;for(const m of OVERPASS_MIRRORS){try{return await getJSON(m+'?data='+encodeURIComponent(q),{timeout});}catch(e){last=e;}}throw last||new Error('Overpass unavailable');}
+const voltKV=v=>{if(!v)return null;const n=String(v).split(/[;,/]/).map(x=>parseFloat(x)).filter(x=>!isNaN(x));return n.length?Math.max(...n)/1000:null;};
+const voltColor=kv=>kv==null?'#888':kv>=200?'#b0005c':kv>=100?'#d7301f':kv>=30?'#f46d43':'#fdae61';
+function distToPath(pt,coords){let best=Infinity;for(let i=0;i<coords.length;i++){const d=km(pt,coords[i]);if(d<best)best=d;if(i){const a=coords[i-1],b=coords[i];const t=((pt[0]-a[0])*(b[0]-a[0])+(pt[1]-a[1])*(b[1]-a[1]))/(((b[0]-a[0])**2+(b[1]-a[1])**2)||1);if(t>0&&t<1){const p=[a[0]+t*(b[0]-a[0]),a[1]+t*(b[1]-a[1])];const d2=km(pt,p);if(d2<best)best=d2;}}}return best;}
+async function adGrid(lat,lon,r,cc,loc){
+  const c=card('grid','Electricity grid — lines, substations, plants, reliability','energy');
+  const g={lines:[],subs:[],plants:[],nearestLine:null,nearestSub:null,nearestPlant:null,zni:null,wb:null,util:null,hifld:null};
+  const R=Math.max(25,r*2)*1000;
+  const tasks=[];
+  // 1. OpenStreetMap power infrastructure (global)
+  tasks.push((async()=>{
+    const q=`[out:json][timeout:90];(way(around:${R},${lat},${lon})["power"~"^(line|minor_line|cable)$"];nwr(around:${R},${lat},${lon})["power"~"^(substation|plant)$"];node(around:${R},${lat},${lon})["power"="generator"]["generator:source"]["generator:output:electricity"];);out tags geom 600;`;
+    const r2=await overpass(q);
+    for(const e of r2.elements||[]){const t=e.tags||{};
+      if(/^(line|minor_line|cable)$/.test(t.power)&&e.geometry){const co=e.geometry.map(p=>[p.lat,p.lon]);const kv=voltKV(t.voltage);const d=distToPath([lat,lon],co);g.lines.push({kv,d,co,name:t.name||'',op:t.operator||'',kind:t.power});}
+      else if(t.power==='substation'){const la=e.lat??e.center?.lat??(e.geometry&&e.geometry[0]?.lat),lo=e.lon??e.center?.lon??(e.geometry&&e.geometry[0]?.lon);if(la==null)continue;g.subs.push({name:t.name||'Substation',kv:voltKV(t.voltage),op:t.operator||'',d:km([lat,lon],[la,lo]),la,lo,sub:t.substation||''});}
+      else if(t.power==='plant'||t.power==='generator'){const la=e.lat??e.center?.lat??(e.geometry&&e.geometry[0]?.lat),lo=e.lon??e.center?.lon??(e.geometry&&e.geometry[0]?.lon);if(la==null)continue;const mw=parseFloat(String(t['plant:output:electricity']||t['generator:output:electricity']||'').replace(/[^\d.]/g,''))||null;g.plants.push({name:t.name||'Power plant',src:t['plant:source']||t['generator:source']||'',mw,op:t.operator||'',d:km([lat,lon],[la,lo]),la,lo});}
+    }
+    g.lines.sort((a,b)=>a.d-b.d);g.subs.sort((a,b)=>a.d-b.d);g.plants.sort((a,b)=>a.d-b.d);
+    g.nearestLine=g.lines[0]||null;g.nearestSub=g.subs[0]||null;g.nearestPlant=g.plants[0]||null;
+    for(const l of g.lines.slice(0,150))L.polyline(l.co,{color:voltColor(l.kv),weight:l.kind==='line'?2:1,opacity:.8,dashArray:l.kind==='cable'?'4 4':null}).bindPopup(`<b>${esc(l.name||l.kind)}</b>${l.kv?' · '+fmt(l.kv,0)+' kV':''}${l.op?'<br>'+esc(l.op):''}<br>${fmt(l.d,1)} km`).addTo(layerGroup);
+    for(const s of g.subs.slice(0,40))L.circleMarker([s.la,s.lo],{radius:5,color:'#6a1b9a',fillColor:'#ce93d8',fillOpacity:.9,weight:1.5}).bindPopup(`<b>${esc(s.name)}</b>${s.kv?' · '+fmt(s.kv,0)+' kV':''}${s.op?'<br>'+esc(s.op):''}<br>${fmt(s.d,1)} km`).addTo(layerGroup);
+    for(const p of g.plants.slice(0,40))L.circleMarker([p.la,p.lo],{radius:6,color:'#263238',fillColor:/solar/i.test(p.src)?'#f3a81c':/wind/i.test(p.src)?'#4fc3f7':/diesel|oil|gas|coal/i.test(p.src)?'#8d6e63':'#90a4ae',fillOpacity:.95,weight:1.5}).bindPopup(`<b>${esc(p.name)}</b><br>${esc(p.src||'?')}${p.mw?' · '+fmt(p.mw,1)+' MW':''}${p.op?'<br>'+esc(p.op):''}<br>${fmt(p.d,1)} km`).addTo(layerGroup);
+  })().catch(e=>html(c,`<div class="hint">OpenStreetMap power layer: ${esc(e.message)}</div>`)));
+  // 2. USA — HIFLD transmission lines + retail service territory
+  if(['US','PR','VI','GU','AS','MP'].includes(cc)){tasks.push((async()=>{
+    const b=bbox(lat,lon,Math.max(30,r*2));const geo=encodeURIComponent(JSON.stringify({xmin:b[0],ymin:b[1],xmax:b[2],ymax:b[3],spatialReference:{wkid:4326}}));
+    const u=`https://services1.arcgis.com/Hp6G80Pky0om7QvQ/arcgis/rest/services/Electric_Power_Transmission_Lines/FeatureServer/0/query?f=geojson&geometry=${geo}&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=VOLTAGE,OWNER,STATUS,TYPE&outSR=4326&resultRecordCount=400`;
+    const j=await getJSON(u,{timeout:40000});const hl=[];
+    for(const f of j.features||[]){const p=f.properties||{};const cs=f.geometry.type==='MultiLineString'?f.geometry.coordinates.flat():f.geometry.coordinates;const co=cs.map(x=>[x[1],x[0]]);const d=distToPath([lat,lon],co);hl.push({kv:p.VOLTAGE>0?p.VOLTAGE:null,d,co,op:p.OWNER||'',status:p.STATUS||'',type:p.TYPE||''});}
+    hl.sort((a,b)=>a.d-b.d);g.hifld={n:hl.length,nearest:hl[0]||null};
+    for(const l of hl.slice(0,120))L.polyline(l.co,{color:voltColor(l.kv),weight:2.5,opacity:.7,dashArray:'6 3'}).bindPopup(`<b>HIFLD transmission</b>${l.kv?' · '+fmt(l.kv,0)+' kV':''}<br>${esc(l.op)} · ${esc(l.status)}<br>${fmt(l.d,1)} km`).addTo(layerGroup);
+    try{const t=await getJSON(`https://maps.nccs.nasa.gov/mapping/rest/services/hifld_open/energy/FeatureServer/26/query?f=json&geometry=${lon},${lat}&geometryType=esriGeometryPoint&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=name,type,holding_co,customers,retail_mwh,cntrl_area,year&returnGeometry=false`,{timeout:30000});const a=t.features&&t.features[0]&&t.features[0].attributes;if(a)g.util={name:a.name,type:a.type,hold:a.holding_co,cust:a.customers,mwh:a.retail_mwh,ca:a.cntrl_area,year:a.year};}catch(e){}
+  })().catch(e=>html(c,`<div class="hint">HIFLD: ${esc(e.message)}</div>`)));}
+  // 3. Colombia — IPSE non-interconnected zones (hours of service per day)
+  if(cc==='CO'){tasks.push((async()=>{
+    const mp=(loc.addr&&(loc.addr.city||loc.addr.town||loc.addr.municipality||loc.addr.county||loc.addr.village))||'';if(!mp)return;
+    const key=mp.toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Z ]/g,'').trim().split(' ')[0];if(!key||key.length<3)return;
+    const rows=await getJSON(`https://www.datos.gov.co/resource/3ebi-d83g.json?$where=upper(mpio) like '%25${encodeURIComponent(key)}%25'&$order=anio DESC,mes DESC&$limit=400`,{timeout:40000});
+    if(!rows.length)return;const by={};for(const x of rows){if(!by[x.localidad])by[x.localidad]={loc:x.localidad,mpio:x.mpio,dpto:x.dpto,h:+x.prom_diario_horas,kw:+x.potencia_maxima,kwh:+x.energia_activa,y:x.anio,m:x.mes};}
+    const list=Object.values(by);g.zni={n:list.length,list,hMed:list.map(x=>x.h).sort((a,b)=>a-b)[Math.floor(list.length/2)],mpio:list[0].mpio,y:list[0].y,m:list[0].m};
+  })().catch(e=>html(c,`<div class="hint">IPSE ZNI: ${esc(e.message)}</div>`)));}
+  // 4. World Bank national indicators
+  tasks.push((async()=>{const a3=countryA3(cc);if(!a3)return;const ids=['EG.ELC.ACCS.ZS','EG.ELC.ACCS.RU.ZS','EG.ELC.LOSS.ZS','IC.ELC.OUTG.ZS','IC.ELC.TIME'];const out={};
+    await Promise.all(ids.map(async id=>{try{const j=await getJSON(`https://api.worldbank.org/v2/country/${a3}/indicator/${id}?format=json&mrnv=1&per_page=5`,{timeout:25000});const d=j&&j[1]&&j[1][0];if(d&&d.value!=null)out[id]={v:d.value,y:d.date,name:d.indicator.value};}catch(e){}}));
+    if(Object.keys(out).length)g.wb=out;})());
+  await Promise.all(tasks);
+  // ---- classify ----
+  const dl=g.hifld?.nearest?Math.min(g.hifld.nearest.d,g.nearestLine?.d??Infinity):g.nearestLine?.d;
+  const kv=g.hifld?.nearest?.kv??g.nearestLine?.kv;
+  let cls,label;
+  if(g.zni){cls='zni';label=`Non-interconnected zone (ZNI): ${fmt(g.zni.hMed,1)} h/day of service`;}
+  else if(dl==null){cls='none';label=`No power line mapped within ${Math.round(R/1000)} km — treat as off-grid`;}
+  else if(dl<=2){cls='near';label=`Grid line ${fmt(dl,1)} km away${kv?' ('+fmt(kv,0)+' kV)':''}`;}
+  else if(dl<=10){cls='mid';label=`Nearest mapped line ${fmt(dl,1)} km${kv?' ('+fmt(kv,0)+' kV)':''} — extension needed`;}
+  else{cls='far';label=`Nearest mapped line ${fmt(dl,0)} km — effectively off-grid`;}
+  g.cls=cls;g.label=label;g.dLine=dl??null;g.kv=kv??null;
+  const wb=g.wb||{};const out=wb['IC.ELC.OUTG.ZS'],loss=wb['EG.ELC.LOSS.ZS'],acc=wb['EG.ELC.ACCS.RU.ZS'];
+  g.rel=out?(out.v>=50?'poor':out.v>=25?'unreliable':'fair'):loss?(loss.v>=20?'poor':loss.v>=12?'unreliable':'fair'):null;
+  setStatus(c,label,cls==='near'?'ok':cls==='none'||cls==='far'||cls==='zni'?'warn':'');
+  cov('Electricity grid proximity (OSM/HIFLD)',dl!=null?'ok':'none',dl!=null?`nearest line ${fmt(dl,1)} km`:'no power line mapped nearby');
+  if(g.util)html(c,`<div><b>Utility territory (HIFLD):</b> ${esc(g.util.name)} — ${esc(g.util.type||'')}${g.util.hold?', '+esc(g.util.hold):''}${g.util.cust?' · '+fmt(g.util.cust,0)+' customers':''}${g.util.ca?' · control area '+esc(g.util.ca):''}</div>`);
+  if(g.zni)html(c,`<div><b>IPSE — Zonas No Interconectadas, ${esc(g.zni.mpio)}</b> (${g.zni.y}-${g.zni.m}): ${g.zni.n} localities tracked, median <b>${fmt(g.zni.hMed,1)} h/day</b>.</div>`+table(g.zni.list.slice(0,12),[{h:'Locality',f:x=>esc(x.loc)},{h:'h/day',num:1,f:x=>fmt(x.h,1)},{h:'Peak kW',num:1,f:x=>fmt(x.kw,0)},{h:'kWh/month',num:1,f:x=>fmt(x.kwh,0)}]));
+  if(g.lines.length||g.hifld)html(c,`<div><b>Lines:</b> ${g.lines.length} OSM segments${g.hifld?` · ${g.hifld.n} HIFLD transmission lines`:''} within ${Math.round(R/1000)} km. ${g.nearestLine?`Nearest OSM: ${esc(g.nearestLine.name||g.nearestLine.kind)} ${g.nearestLine.kv?fmt(g.nearestLine.kv,0)+' kV ':''}at ${fmt(g.nearestLine.d,1)} km${g.nearestLine.op?' ('+esc(g.nearestLine.op)+')':''}.`:''}${g.hifld?.nearest?` Nearest HIFLD: ${fmt(g.hifld.nearest.kv,0)} kV ${esc(g.hifld.nearest.op)} at ${fmt(g.hifld.nearest.d,1)} km.`:''}</div>`);
+  if(g.subs.length)html(c,'<b>Substations (OSM)</b>'+table(g.subs.slice(0,6),[{h:'Name',f:x=>esc(x.name)},{h:'kV',num:1,f:x=>fmt(x.kv,0)},{h:'Operator',f:x=>esc(x.op)},{h:'km',num:1,f:x=>fmt(x.d,1)}]));
+  if(g.plants.length)html(c,'<b>Power plants / generators (OSM)</b>'+table(g.plants.slice(0,8),[{h:'Name',f:x=>esc(x.name)},{h:'Source',f:x=>esc(x.src)},{h:'MW',num:1,f:x=>fmt(x.mw,1)},{h:'Operator',f:x=>esc(x.op)},{h:'km',num:1,f:x=>fmt(x.d,1)}]));
+  if(g.wb)html(c,'<b>National grid quality (World Bank)</b>'+table(Object.values(g.wb),[{h:'Indicator',f:x=>esc(x.name)},{h:'Value',num:1,f:x=>fmt(x.v,1)},{h:'Year',f:x=>esc(x.y)}])+`<div class="hint">Reliability class: <b>${esc(g.rel||'unknown')}</b> (from share of firms reporting outages, else T&amp;D losses). SAIDI/SAIFI by utility is not published as open API in most countries — EIA-861 (US) and XM/SUI (CO) are download files; see to-do.</div>`);
+  html(c,'<div class="hint">Map: lines coloured by voltage (red ≥200 kV → yellow &lt;30 kV; dashed = HIFLD or cable), purple dots = substations, dark dots = plants (orange solar, blue wind, brown fossil). OSM coverage is uneven: a missing line is "not mapped", not "absent".</div>');
+  return g;
+}
+
 function adFeedOptions(ctx){
   const c=card('feed','Feed-water candidates & first-order sizing','energy');
   const Q=ctx.Q||0;const psh=ctx.solar?.worst||null;
@@ -949,6 +1025,7 @@ function adFeedOptions(ctx){
   setStatus(c,Q?`${fmt(Q,0)} m³/d`:'needs population','');
   html(c,table(rows,[{h:'Feed',f:r=>esc(r.src)},{h:'TDS mg/L',num:1,f:r=>fmt(r.tds,0)},{h:'Class',f:r=>r.cl?`<span class="pill ${r.cl.cls}">${esc(r.cl.c)}</span>`:'?'},{h:'kWh/m³',num:1,f:r=>fmt(r.sec,1)},{h:'kWh/day',num:1,f:r=>fmt(r.E,0)},{h:'PV kWp',num:1,f:r=>fmt(r.pv,0)},{h:'Batt kWh',num:1,f:r=>fmt(r.batt,0)},{h:'Gen kVA',num:1,f:r=>fmt(r.gen,0)},{h:'Land m²',num:1,f:r=>fmt(r.land,0)}]));
   ctx.best=rows.filter(r=>r.E!=null).sort((a,b)=>a.E-b.E)[0]||null;
+  const gd=ctx.grid;if(gd){const strat=gd.cls==='near'&&gd.rel==='fair'?'Grid-tied PV (no battery, small genset or none): grid is close and nationally reliable — size PV for daytime RO and buy night-time energy.':gd.cls==='near'?'Hybrid: grid is close but unreliable — keep the battery and genset sized above; grid lowers fuel use, not the capex.':gd.cls==='zni'?`Off-grid design: the locality is in a non-interconnected zone with ~${fmt(gd.zni?.hMed,0)} h/day of diesel service — PV + battery sized above; the existing genset can be the standby.`:gd.cls==='mid'?`Off-grid design unless a ${fmt(gd.dLine,0)} km line extension (${gd.kv?fmt(gd.kv,0)+' kV':'MV'}) is cheaper than the battery + genset.`:'Off-grid design: no grid within reach — PV + battery + genset as sized above.';html(c,`<div><b>Grid strategy:</b> ${esc(strat)} <span class="hint">(${esc(gd.label||'')}${gd.rel?'; national reliability '+esc(gd.rel):''})</span></div>`);}
   html(c,`<div class="hint">Daytime-RO strategy: PV sized on worst-month GHI (${psh?fmt(psh,2):'?'} kWh/m²/d, PR 0.75); battery ≈ 1.5 h of RO load (water storage does the rest); standby genset ×1.25; land = PV 7.5 m²/kWp + plant 0.4 m²/(m³/d) + 2 days' storage. Inland brackish needs brine evaporation ponds (~60 m² per m³/d of plant) not included. Energy figures include intake and distribution; small-plant penalty not applied.</div>`);
 }
 
@@ -984,6 +1061,7 @@ function renderBrief(ctx){
     {cls:covCls,l:'Data coverage',v:`${okN}<small>/ ${totN}</small>`,n:ctx.wwtp?`WWTP nearby${ctx.wwtpName?': '+esc(ctx.wwtpName):''}`:'no treatment plant mapped'},
     (ctx.need?.sub?{cls:ctx.need.sub.Basic>=95?'ok':ctx.need.sub.Basic>=85?'warn':'bad',l:'Water need (region)',v:`${fmt(100-ctx.need.sub.Basic,0)}<small>% lack basic</small>`,n:`${esc(ctx.need.sub.region)} ${ctx.need.sub.year} · rural poorest: ${fmt(100-(ctx.need.sub.country.rural_q1?.Basic??100),0)}% lack basic`}:
     {cls:ctx.need?.gapRu==null?'':ctx.need.gapRu>=50?'bad':ctx.need.gapRu>=20?'warn':'ok',l:'Rural water need (national)',v:ctx.need?.gapRu!=null?`${fmt(ctx.need.gapRu,0)}<small>% lack safe water</small>`:'—',n:ctx.need?.d?`${esc(ctx.need.d.name)} rural, JMP ${esc(ctx.need.d.smdw_y||ctx.need.d.basw_y||'')}`:'no JMP estimate'}),
+    {cls:ctx.grid?(ctx.grid.cls==='near'?(ctx.grid.rel==='poor'?'warn':'ok'):ctx.grid.cls==='mid'?'warn':ctx.grid.cls==='zni'?'bad':ctx.grid.cls==='none'||ctx.grid.cls==='far'?'bad':''):'',l:'Electricity grid',v:ctx.grid?(ctx.grid.cls==='zni'?`${fmt(ctx.grid.zni?.hMed,0)}<small>h/day (ZNI)</small>`:ctx.grid.dLine!=null?`${fmt(ctx.grid.dLine,ctx.grid.dLine<10?1:0)}<small>km to line${ctx.grid.kv?' · '+fmt(ctx.grid.kv,0)+' kV':''}</small>`:'off-grid'):'—',n:ctx.grid?(ctx.grid.util?esc(ctx.grid.util.name):ctx.grid.rel?`national reliability: ${esc(ctx.grid.rel)}`:ctx.grid.nearestPlant?`nearest plant: ${esc(ctx.grid.nearestPlant.name)} (${esc(ctx.grid.nearestPlant.src||'?')})`:'no line mapped'):'no grid data'},
     {cls:ctx.ds?.nearest?'info':ctx.ds?.nearestPlanned?'warn':'',l:'Desal nearby',v:ctx.ds?.nearest?`${fmt(ctx.ds.nearest.d,0)}<small>km</small>`:ctx.ds?.nearestPlanned?`${fmt(ctx.ds.nearestPlanned.d,0)}<small>km ${/cancel/i.test(ctx.ds.nearestPlanned.status||'')?'cancelled':/operat|existing|built|commission|inaugur|deliver/i.test(ctx.ds.nearestPlanned.status||'')?'operating':'planned'}</small>`:'none ≤150 km',n:ctx.ds?.nearest?esc(ctx.ds.nearest.name):ctx.ds?.nearestPlanned?esc(ctx.ds.nearestPlanned.name):'no plant mapped'}];
   const verdict=[];
   if(best&&sol){verdict.push(`<b>${esc(best.src)}</b> is the lowest-energy option found: about <b>${fmt(best.pv,0)} kWp</b> of PV with ${fmt(best.batt,0)} kWh of battery and a ${fmt(best.gen,0)} kVA standby set, on roughly ${fmt(best.land/10000,2)} ha.`);}
@@ -992,6 +1070,7 @@ function renderBrief(ctx){
   if(!util)verdict.push('No registered water utility serves this point, so a community plant would be a new supply rather than a replacement.');
   if(ctx.need?.gapRu!=null&&ctx.need.gapRu>=20)verdict.push(`Nationally, ${fmt(ctx.need.gapRu,0)}% of the rural population lacks safely managed water (JMP), which supports prioritising this region.`);
   if(ctx.ds?.nearest)verdict.push(`An existing desalination plant (${esc(ctx.ds.nearest.name)}) operates ${fmt(ctx.ds.nearest.d,0)} km away — a reference for feed water, permits and operators.`);
+  if(ctx.grid){const gd=ctx.grid;if(gd.cls==='zni')verdict.push(`The locality is in Colombia's non-interconnected zone with about ${fmt(gd.zni?.hMed,0)} h/day of generator service, so a solar-battery plant is the realistic design and can share the existing genset.`);else if(gd.cls==='none'||gd.cls==='far')verdict.push(`No grid line is mapped within reach (${esc(gd.label)}), so plan fully off-grid.`);else if(gd.cls==='near'&&gd.rel==='poor')verdict.push(`The grid is close (${fmt(gd.dLine,1)} km) but nationally unreliable (${esc(gd.rel)}), so keep storage and a standby set.`);else if(gd.cls==='near')verdict.push(`A ${gd.kv?fmt(gd.kv,0)+' kV ':''}line passes ${fmt(gd.dLine,1)} km away${gd.util?' ('+esc(gd.util.name)+')':''}, so a grid-tied PV plant without battery is an option.`);}
   if(sol&&sol.worst<3)verdict.push(`Winter sun is weak (${fmt(sol.worst,1)} kWh/m²/d); expect a large array or seasonal generator use.`);
   b.innerHTML=`<div><div class="place">${esc(name)}</div><div class="sub">${esc(region)} · ${ctx.lat.toFixed(4)}, ${ctx.lon.toFixed(4)} · ${ctx.r} km radius</div></div><div class="kpi">${tiles.map(t=>`<div class="${t.cls}"><span class="l">${t.l}</span><span class="v">${t.v}</span><span class="n" title="${t.n.replace(/<[^>]+>/g,'')}">${t.n}</span></div>`).join('')}</div><div class="verdict">${verdict.join(' ')}</div>`;
   g.insertBefore(b,g.querySelector('h3').nextSibling);
@@ -1039,6 +1118,7 @@ async function scan(lat,lon){
     const solar=await adSolar(lat,lon);
     await adRiverFlow(lat,lon);
     const natP=runNational(cc,lat,lon,r,loc);
+    const gridP=adGrid(lat,lon,r,cc,loc).catch(e=>({cls:'none',label:'grid lookup failed: '+e.message,rel:null}));
     const osm=await osmP;
     let wp=null; // WorldPop API is not callable from a browser page (CORS); backend item
     const dem=adDemand(osm.places||[],wp);
@@ -1046,6 +1126,7 @@ async function scan(lat,lon){
     const a3=countryA3(cc);const need=await adNeed(a3,cc,loc);const ds=await adDesalNearby(lat,lon);
     const ctx={lat,lon,r,loc,Q:dem.Q,pop:dem.pop,assumed:dem.assumed,salineArea:!!gw.saline,need,ds,solar,coast:osm.coast,wells:osm.wells,tds:null,wwtp:false,utility:null,micro:null,wwtpName:null};
     const nat=await natP;Object.assign(ctx,nat);
+    ctx.grid=await gridP;
     if(nat.wellsAdd)ctx.wells+=nat.wellsAdd;
     ctx.wwtp=coverage.some(x=>/Wastewater treatment \((OSM|EPA|ANA)\)/.test(x.topic)&&x.state==='ok');
     adFeedOptions(ctx);
