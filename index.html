@@ -1008,6 +1008,9 @@ async function adGrid(lat,lon,r,cc,loc){
   return g;
 }
 
+function gridStrategy(ctx,c){
+  const gd=ctx.grid;if(!gd)return;c=c||cards.feed;if(!c)return;c.body.querySelectorAll('.gridstrat').forEach(x=>x.remove());{const strat=gd.cls==='near'&&gd.rel==='fair'?'Grid-tied PV (no battery, small genset or none): grid is close and nationally reliable — size PV for daytime RO and buy night-time energy.':gd.cls==='near'?'Hybrid: grid is close but unreliable — keep the battery and genset sized above; grid lowers fuel use, not the capex.':gd.cls==='zni'?`Off-grid design: the locality is in a non-interconnected zone with ~${fmt(gd.zni?.hMed,0)} h/day of diesel service — PV + battery sized above; the existing genset can be the standby.`:gd.cls==='unmapped'?'Grid not mapped here but the country is electrified — design as hybrid (PV + small battery + genset) and confirm the nearest MV line with the utility; if a line is within ~2 km, drop the battery.':gd.cls==='mid'?`Off-grid design unless a ${fmt(gd.dLine,0)} km line extension (${gd.kv?fmt(gd.kv,0)+' kV':'MV'}) is cheaper than the battery + genset.`:'Off-grid design: no grid within reach — PV + battery + genset as sized above.';html(c,`<div class="gridstrat"><b>Grid strategy:</b> ${esc(strat)} <span class="hint">(${esc(gd.label||'')}${gd.rel?'; national reliability '+esc(gd.rel):''})</span></div>`);}
+}
 function adFeedOptions(ctx){
   const c=card('feed','Feed-water candidates & first-order sizing','energy');
   const Q=ctx.Q||0;const psh=ctx.solar?.worst||null;
@@ -1025,7 +1028,7 @@ function adFeedOptions(ctx){
   setStatus(c,Q?`${fmt(Q,0)} m³/d`:'needs population','');
   html(c,table(rows,[{h:'Feed',f:r=>esc(r.src)},{h:'TDS mg/L',num:1,f:r=>fmt(r.tds,0)},{h:'Class',f:r=>r.cl?`<span class="pill ${r.cl.cls}">${esc(r.cl.c)}</span>`:'?'},{h:'kWh/m³',num:1,f:r=>fmt(r.sec,1)},{h:'kWh/day',num:1,f:r=>fmt(r.E,0)},{h:'PV kWp',num:1,f:r=>fmt(r.pv,0)},{h:'Batt kWh',num:1,f:r=>fmt(r.batt,0)},{h:'Gen kVA',num:1,f:r=>fmt(r.gen,0)},{h:'Land m²',num:1,f:r=>fmt(r.land,0)}]));
   ctx.best=rows.filter(r=>r.E!=null).sort((a,b)=>a.E-b.E)[0]||null;
-  const gd=ctx.grid;if(gd){const strat=gd.cls==='near'&&gd.rel==='fair'?'Grid-tied PV (no battery, small genset or none): grid is close and nationally reliable — size PV for daytime RO and buy night-time energy.':gd.cls==='near'?'Hybrid: grid is close but unreliable — keep the battery and genset sized above; grid lowers fuel use, not the capex.':gd.cls==='zni'?`Off-grid design: the locality is in a non-interconnected zone with ~${fmt(gd.zni?.hMed,0)} h/day of diesel service — PV + battery sized above; the existing genset can be the standby.`:gd.cls==='unmapped'?'Grid not mapped here but the country is electrified — design as hybrid (PV + small battery + genset) and confirm the nearest MV line with the utility; if a line is within ~2 km, drop the battery.':gd.cls==='mid'?`Off-grid design unless a ${fmt(gd.dLine,0)} km line extension (${gd.kv?fmt(gd.kv,0)+' kV':'MV'}) is cheaper than the battery + genset.`:'Off-grid design: no grid within reach — PV + battery + genset as sized above.';html(c,`<div><b>Grid strategy:</b> ${esc(strat)} <span class="hint">(${esc(gd.label||'')}${gd.rel?'; national reliability '+esc(gd.rel):''})</span></div>`);}
+  gridStrategy(ctx,c);
   html(c,`<div class="hint">Daytime-RO strategy: PV sized on worst-month GHI (${psh?fmt(psh,2):'?'} kWh/m²/d, PR 0.75); battery ≈ 1.5 h of RO load (water storage does the rest); standby genset ×1.25; land = PV 7.5 m²/kWp + plant 0.4 m²/(m³/d) + 2 days' storage. Inland brackish needs brine evaporation ponds (~60 m² per m³/d of plant) not included. Energy figures include intake and distribution; small-plant penalty not applied.</div>`);
 }
 
@@ -1044,7 +1047,7 @@ function adCoverage(){
 
 
 function renderBrief(ctx){
-  const g=groupEl.site;g.hidden=false;const b=document.createElement('div');b.className='brief';
+  const g=groupEl.site;g.hidden=false;g.querySelectorAll('.brief').forEach(x=>x.remove());const b=document.createElement('div');b.className='brief';
   const loc=ctx.loc||{};const name=(loc.addr&&(loc.addr.village||loc.addr.town||loc.addr.city||loc.addr.municipality||loc.addr.county))||'This point';const region=[loc.addr?.state,loc.addr?.country].filter(Boolean).join(', ');
   const sol=ctx.solar;const solCls=!sol?'':sol.worst>=4?'ok':sol.worst>=3?'warn':'bad';
   const dem=ctx.Q?`${fmt(ctx.Q,0)}<small>m³/d</small>`:'—';
@@ -1061,7 +1064,7 @@ function renderBrief(ctx){
     {cls:covCls,l:'Data coverage',v:`${okN}<small>/ ${totN}</small>`,n:ctx.wwtp?`WWTP nearby${ctx.wwtpName?': '+esc(ctx.wwtpName):''}`:'no treatment plant mapped'},
     (ctx.need?.sub?{cls:ctx.need.sub.Basic>=95?'ok':ctx.need.sub.Basic>=85?'warn':'bad',l:'Water need (region)',v:`${fmt(100-ctx.need.sub.Basic,0)}<small>% lack basic</small>`,n:`${esc(ctx.need.sub.region)} ${ctx.need.sub.year} · rural poorest: ${fmt(100-(ctx.need.sub.country.rural_q1?.Basic??100),0)}% lack basic`}:
     {cls:ctx.need?.gapRu==null?'':ctx.need.gapRu>=50?'bad':ctx.need.gapRu>=20?'warn':'ok',l:'Rural water need (national)',v:ctx.need?.gapRu!=null?`${fmt(ctx.need.gapRu,0)}<small>% lack safe water</small>`:'—',n:ctx.need?.d?`${esc(ctx.need.d.name)} rural, JMP ${esc(ctx.need.d.smdw_y||ctx.need.d.basw_y||'')}`:'no JMP estimate'}),
-    {cls:ctx.grid?(ctx.grid.cls==='near'?(ctx.grid.rel==='poor'?'warn':'ok'):ctx.grid.cls==='mid'?'warn':ctx.grid.cls==='zni'?'bad':ctx.grid.cls==='none'||ctx.grid.cls==='far'?'bad':ctx.grid.cls==='unmapped'?'warn':''):'',l:'Electricity grid',v:ctx.grid?(ctx.grid.cls==='zni'?`${fmt(ctx.grid.zni?.hMed,0)}<small>h/day (ZNI)</small>`:ctx.grid.dLine!=null?`${fmt(ctx.grid.dLine,ctx.grid.dLine<10?1:0)}<small>km to line${ctx.grid.kv?' · '+fmt(ctx.grid.kv,0)+' kV':''}</small>`:ctx.grid.cls==='unmapped'?'unmapped':'off-grid'):'—',n:ctx.grid?(ctx.grid.util?esc(ctx.grid.util.name):ctx.grid.rel?`national reliability: ${esc(ctx.grid.rel)}`:ctx.grid.nearestPlant?`nearest plant: ${esc(ctx.grid.nearestPlant.name)} (${esc(ctx.grid.nearestPlant.src||'?')})`:'no line mapped'):'no grid data'},
+    {cls:ctx.grid?(ctx.grid.cls==='near'?(ctx.grid.rel==='poor'?'warn':'ok'):ctx.grid.cls==='mid'?'warn':ctx.grid.cls==='zni'?'bad':ctx.grid.cls==='none'||ctx.grid.cls==='far'?'bad':ctx.grid.cls==='unmapped'?'warn':''):'',l:'Electricity grid',v:ctx.grid?(ctx.grid.cls==='zni'?`${fmt(ctx.grid.zni?.hMed,0)}<small>h/day (ZNI)</small>`:ctx.grid.dLine!=null?`${fmt(ctx.grid.dLine,ctx.grid.dLine<10?1:0)}<small>km to line${ctx.grid.kv?' · '+fmt(ctx.grid.kv,0)+' kV':''}</small>`:ctx.grid.cls==='unmapped'?'unmapped':'off-grid'):'<small>querying…</small>',n:ctx.grid?(ctx.grid.util?esc(ctx.grid.util.name):ctx.grid.rel?`national reliability: ${esc(ctx.grid.rel)}`:ctx.grid.nearestPlant?`nearest plant: ${esc(ctx.grid.nearestPlant.name)} (${esc(ctx.grid.nearestPlant.src||'?')})`:'no line mapped'):'grid lookup still running'},
     {cls:ctx.ds?.nearest?'info':ctx.ds?.nearestPlanned?'warn':'',l:'Desal nearby',v:ctx.ds?.nearest?`${fmt(ctx.ds.nearest.d,0)}<small>km</small>`:ctx.ds?.nearestPlanned?`${fmt(ctx.ds.nearestPlanned.d,0)}<small>km ${/cancel/i.test(ctx.ds.nearestPlanned.status||'')?'cancelled':/operat|existing|built|commission|inaugur|deliver/i.test(ctx.ds.nearestPlanned.status||'')?'operating':'planned'}</small>`:'none ≤150 km',n:ctx.ds?.nearest?esc(ctx.ds.nearest.name):ctx.ds?.nearestPlanned?esc(ctx.ds.nearestPlanned.name):'no plant mapped'}];
   const verdict=[];
   if(best&&sol){verdict.push(`<b>${esc(best.src)}</b> is the lowest-energy option found: about <b>${fmt(best.pv,0)} kWp</b> of PV with ${fmt(best.batt,0)} kWh of battery and a ${fmt(best.gen,0)} kVA standby set, on roughly ${fmt(best.land/10000,2)} ha.`);}
@@ -1126,7 +1129,8 @@ async function scan(lat,lon){
     const a3=countryA3(cc);const need=await adNeed(a3,cc,loc);const ds=await adDesalNearby(lat,lon);
     const ctx={lat,lon,r,loc,Q:dem.Q,pop:dem.pop,assumed:dem.assumed,salineArea:!!gw.saline,need,ds,solar,coast:osm.coast,wells:osm.wells,tds:null,wwtp:false,utility:null,micro:null,wwtpName:null};
     const nat=await natP;Object.assign(ctx,nat);
-    ctx.grid=await gridP;
+    ctx.grid=await Promise.race([gridP,new Promise(r=>setTimeout(()=>r(null),40000))]);
+    if(!ctx.grid)gridP.then(g=>{ctx.grid=g;gridStrategy(ctx);renderBrief(ctx);});
     if(nat.wellsAdd)ctx.wells+=nat.wellsAdd;
     ctx.wwtp=coverage.some(x=>/Wastewater treatment \((OSM|EPA|ANA)\)/.test(x.topic)&&x.state==='ok');
     adFeedOptions(ctx);
