@@ -851,10 +851,11 @@ async function adColombia(lat,lon,r,loc){
     if(chem.length)html(c2,'<b>Fisicoquímica</b>'+table(chem,col));
     if(micro.length)html(c2,'<b>Microbiología</b>'+table(micro,col));
     const ec=chem.find(x=>/CONDUCTIVIDAD/.test(x.name))||chem.find(x=>/SOLIDOS DISUELTOS/.test(x.name));
-    if(ec){tds=/SOLIDOS/.test(ec.name)?ec.median:ecToTDS(ec.median);const cl=classifyTDS(tds);html(c2,`<div><span class="pill ${cl.cls}">${esc(cl.l)}</span> surface water TDS≈${fmt(tds,0)} mg/L (median across ${ec.sites.size} points)</div>`);}
+    const nearestD=P.length?P[0].d:Infinity;
+    if(ec){const t=/SOLIDOS/.test(ec.name)?ec.median:ecToTDS(ec.median);const cl=classifyTDS(t);if(nearestD<=30){tds=t;html(c2,`<div><span class="pill ${cl.cls}">${esc(cl.l)}</span> surface water TDS≈${fmt(t,0)} mg/L (median across ${ec.sites.size} points, nearest ${fmt(nearestD,0)} km)</div>`);}else{html(c2,`<div><span class="pill ${cl.cls}">${esc(cl.l)}</span> surface water TDS≈${fmt(t,0)} mg/L at the nearest IDEAM points — but they are ${fmt(nearestD,0)} km away (different river basin), so this is <b>not used</b> as a feed-water candidate here.</div>`);}}
     ecoli=micro.find(x=>/ESCHERICHIA/.test(x.name))||micro[0];
     src(c2,'IDEAM — Data Histórica de Calidad de Agua Superficial y Sedimentos, datos.gov.co 62gv-3857','https://www.datos.gov.co/d/62gv-3857');
-    cov('Water chemistry',chem.length?'ok':'none',`${chem.length} parámetros IDEAM${R>r?' ('+R+' km)':''}`);
+    cov('Water chemistry',chem.length?(nearestD<=30?'ok':'partial'):'none',`${chem.length} parámetros IDEAM${R>r?' ('+R+' km)':''}${nearestD>30&&chem.length?' — nearest point '+fmt(nearestD,0)+' km, not representative':''}`);
     cov('Microbiology (E. coli etc.)',micro.length?'ok':'none',micro.length?`IDEAM ${micro.reduce((s,x)=>s+x.n,0)} results${R>r?' ('+R+' km)':''}`:'no bacteriology at IDEAM points nearby');
   }catch(e){fail(c2,e,'IDEAM');cov('Water chemistry','missing',e.message);}
 
