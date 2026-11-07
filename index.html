@@ -184,20 +184,20 @@ function flagVal(name,v,unit){if(v==null||isNaN(v))return '';const n=name.toLowe
   if(/coli|enterococ|fecal/.test(n))return v>0?'bad':'ok';
   if(/dissolved solids|résidu sec/.test(n))return mg<1000?'ok':mg<3000?'warn':'bad';
   if(/conductiv/.test(n)){const t=ecToTDS(v);return t<1000?'ok':t<3000?'warn':'bad';}
-  if(/chlorid|chlorure/.test(n))return mg<=250?'ok':mg<=1000?'warn':'bad';
-  if(/sulfat/.test(n))return mg<=250?'ok':mg<=500?'warn':'bad';
-  if(/nitrat/.test(n)&&!/nitrit/.test(n))return mg<=50?'ok':'bad';
-  if(/arsenic/.test(n))return mg<=0.01?'ok':'bad';
+  if(/chlorid|chlorure|cloruro/.test(n))return mg<=250?'ok':mg<=1000?'warn':'bad';
+  if(/sulfat|sulfato/.test(n))return mg<=250?'ok':mg<=500?'warn':'bad';
+  if(/nitrat/.test(n)&&!/nitrit/.test(n)){const asN=/n\/l|mg n|n-no3/.test(u);return mg<=(asN?11.3:50)?'ok':'bad';}
+  if(/arsenic|arsenico/.test(n))return mg<=0.01?'ok':'bad';
   if(/fluor/.test(n))return mg<=1.5?'ok':'bad';
   if(/boron|bore/.test(n))return mg<=2.4?'ok':'bad';
-  if(/^iron|fer total/.test(n))return mg<=0.3?'ok':'warn';
+  if(/^iron|fer total|hierro/.test(n))return mg<=0.3?'ok':'warn';
   if(/mangan/.test(n))return mg<=0.1?'ok':'warn';
-  if(/turbid/.test(n))return v<=1?'ok':v<=5?'warn':'bad';
+  if(/turbid|turbiedad/.test(n))return v<=1?'ok':v<=5?'warn':'bad';
   if(/^ph/.test(n))return v>=6.5&&v<=8.5?'ok':'warn';
-  if(/hardness|dureté/.test(n))return mg<=200?'ok':mg<=500?'warn':'bad';
+  if(/hardness|dureté|dureza/.test(n))return mg<=200?'ok':mg<=500?'warn':'bad';
   if(/sodium/.test(n))return mg<=200?'ok':'warn';
   if(/silica|silice/.test(n))return mg<=30?'ok':'warn';
-  if(/ammoni/.test(n))return mg<=0.5?'ok':'warn';
+  if(/ammoni|amoniacal/.test(n))return mg<=0.5?'ok':'warn';
   return '';}
 const dotc=cls=>`<span class="dotc ${cls}"></span>`;
 // coverage ledger
@@ -473,6 +473,97 @@ async function adHubeau(lat,lon,r){
   }catch(e){fail(c,e,"Hub'Eau");return {};}
 }
 
+
+// ---------- Colombia (datos.gov.co Socrata) ----------
+const SODA='https://www.datos.gov.co/resource/';
+const norm=t=>String(t||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().trim();
+function statsOf(vals){const s=[...vals].sort((x,y)=>x-y);return{n:s.length,min:s[0],median:s[Math.floor(s.length/2)],max:s[s.length-1]};}
+async function adColombia(lat,lon,r,loc){
+  const a=loc.addr||{};const cands=[a.city,a.town,a.village,a.municipality,a.county].filter(Boolean).map(norm);const dep=norm(a.state||'');
+  const c1=card('co-irca','Agua potable: IRCA por municipio (INS / SIVICAP)','quality');
+  let irca=null,muni=null;
+  try{
+    let rows=[];
+    for(const nm of cands){const u=`${SODA}nxt2-39c3.json?$q=${encodeURIComponent(nm)}&$limit=200`;const rr=await getJSON(u).catch(()=>[]);rows=rr.filter(x=>norm(x.municipio)===nm);if(rows.length){muni=rows[0];break;}}
+    if(!rows.length)throw new Error('municipio not matched in SIVICAP: '+cands.join(' / '));
+    rows.sort((x,y)=>(+y.a_o)-(+x.a_o));const latest=rows[0];irca=+latest.irca;
+    const lvl=v=>v==null||isNaN(v)?'':v<=5?'ok':v<=35?'warn':'bad';
+    const label=v=>v==null||isNaN(v)?'—':v<=5?'Sin riesgo':v<=14?'Riesgo bajo':v<=35?'Riesgo medio':v<=80?'Riesgo alto':'Inviable sanitariamente';
+    setStatus(c1,`IRCA ${fmt(irca,1)} (${latest.a_o})`,lvl(irca));
+    html(c1,`<dl class="kv"><dt>Municipio</dt><dd><b>${esc(latest.municipio)}</b>, ${esc(latest.departamento)} · DANE ${esc(latest.municipiocodigo)}</dd><dt>IRCA ${esc(latest.a_o)}</dt><dd>${dotc(lvl(irca))}<b>${fmt(irca,1)}</b> — ${esc(label(irca))}</dd><dt>Urbano / rural</dt><dd>${dotc(lvl(+latest.ircaurbano))}${fmt(+latest.ircaurbano,1)} · ${dotc(lvl(+latest.ircarural))}${fmt(+latest.ircarural,1)}</dd></dl>`);
+    const hist=rows.slice(0,12).reverse();const mx=Math.max(...hist.map(x=>+x.irca||0),10);
+    html(c1,`<div class="months-wrap"><div class="months" style="grid-template-columns:repeat(${hist.length},1fr)">${hist.map(x=>`<div style="height:${Math.round((+x.irca||0)/mx*100)}%;background:var(--${lvl(+x.irca)==='ok'?'good':lvl(+x.irca)==='warn'?'warn':'bad'})" title="${esc(x.a_o)}: ${fmt(+x.irca,1)}"><span>${String(x.a_o).slice(2)}</span></div>`).join('')}</div></div><div class="hint">IRCA 0–100 weights failed parameters; E. coli counts 25 points and total coliforms 15, so a high IRCA is mostly a microbiology failure. ≤5 sin riesgo · 5–14 bajo · 14–35 medio · 35–80 alto · >80 inviable. Per-sample E. coli counts live in SIVICAP WEB (INS), not in the open dataset.</div>`);
+    src(c1,'INS — Calidad del Agua para Consumo Humano (SIVICAP), datos.gov.co nxt2-39c3',`https://www.datos.gov.co/d/nxt2-39c3`);
+    cov('Drinking-water risk index (IRCA)','ok',`${latest.municipio} ${latest.a_o}: ${fmt(irca,1)} ${label(irca)}`);
+  }catch(e){fail(c1,e,'SIVICAP');cov('Drinking-water risk index (IRCA)','missing',e.message);}
+
+  // IDEAM surface-water quality points
+  const c2=card('co-q','Calidad de aguas superficiales (IDEAM, red nacional)','quality');
+  let ecoli=null,tds=null,chemN=0;
+  try{
+    let R=r,rows=[];
+    for(const mult of [1,3,8]){R=r*mult;const b=bbox(lat,lon,R);const w=`latitud between ${b[1]} and ${b[3]} AND longitud between ${b[0]} and ${b[2]}`;
+      rows=await getJSON(`${SODA}62gv-3857.json?$where=${encodeURIComponent(w)}&$limit=20000`,{timeout:60000});if(rows.length)break;}
+    if(!rows.length)throw new Error('no IDEAM quality points within '+R+' km');
+    const pts={};const g={};
+    for(const x of rows){const v=parseFloat(String(x.resultado).replace(',','.'));const nm=x.propiedad_observada;if(!nm)continue;
+      const key=x.nombre_del_punto_de_monitoreo;if(!pts[key])pts[key]={name:key,la:+x.latitud,lo:+x.longitud,river:x.corriente,n:0,last:''};pts[key].n++;if((x.fecha||'')>pts[key].last)pts[key].last=x.fecha;
+      if(isNaN(v)||/SEDIMENTO|BIODISPONIBLE/.test(nm))continue;
+      const a=g[nm]||(g[nm]={name:nm,unit:x.unidad_del_resultado,vals:[],last:'',sites:new Set()});a.vals.push(v);a.sites.add(key);if((x.fecha||'')>a.last)a.last=x.fecha;}
+    const P=Object.values(pts).map(p=>({...p,d:km([lat,lon],[p.la,p.lo])})).sort((x,y)=>x.d-y.d);
+    for(const p of P.slice(0,50))dot(p.la,p.lo,'sea',`<b>IDEAM ${esc(p.name)}</b><br>${esc(p.river||'')}<br>${p.n} results · last ${esc(String(p.last).slice(0,10))} · ${fmt(p.d,1)} km`);
+    const want=/CONDUCTIVIDAD|CLORURO|SULFATO|NITRATO|NITRITO|AMONIACAL|TURBIDEZ|^pH$|SOLIDOS DISUELTOS|DUREZA|ALCALINIDAD|HIERRO TOTAL|MANGANESO TOTAL|ARSENICO|MERCURIO TOTAL EN AGUA|PLOMO TOTAL|CADMIO TOTAL|CROMO TOTAL|ALUMINIO TOTAL|CALCIO|MAGNESIO|COLIFORMES|ESCHERICHIA|OXIGENO DISUELTO|CARBONO ORGANICO|TEMPERATURA|CAUDAL/;
+    const list=Object.values(g).filter(a=>want.test(a.name)).map(a=>({...a,...statsOf(a.vals)})).sort((x,y)=>y.n-x.n);
+    const isM=n=>/COLIFORM|ESCHERICHIA/.test(n);const micro=list.filter(a=>isM(a.name)),chem=list.filter(a=>!isM(a.name));chemN=chem.length;
+    const pretty=n=>n.replace(' POR SUSTRATO DEFINIDO','').replace(' POR FILTRACION POR MEMBRANA',' (MF)').replace(' TOTAL EN AGUA','').replace('(DQO)','').toLowerCase().replace(/^./,ch=>ch.toUpperCase()).replace('ph','pH').replace(/\bdqo\b/i,'DQO').replace(/\bod\b/i,'OD');
+    const col=[{h:'Parámetro',f:x=>`<span class="pname">${dotc(flagVal(x.name,x.median,x.unit))}${esc(pretty(x.name))}</span>`},{h:'Mediana',num:1,f:x=>`<b>${fmt(x.median,2)}</b> <span class="tag">${esc(x.unit||'')}</span>`},{h:'Rango',num:1,f:x=>`<span class="range">${fmt(x.min,1)}–${fmt(x.max,1)}</span>`},{h:'n',num:1,f:x=>x.n},{h:'Puntos',num:1,f:x=>x.sites.size},{h:'Último',f:x=>esc(String(x.last).slice(0,7))}];
+    setStatus(c2,`${P.length} puntos · ${rows.length} resultados${R>r?' · '+R+' km':''}`,'ok');
+    html(c2,`<div>${P.slice(0,6).map(p=>`${esc(p.name.replace(/\s*\[\d+\]$/,''))} <span class="tag">${esc(p.river||'')} · ${fmt(p.d,0)} km</span>`).join('; ')}${R>r?`<div class="hint">No points within ${r} km; radius widened to ${R} km.</div>`:''}</div>`);
+    if(chem.length)html(c2,'<b>Fisicoquímica</b>'+table(chem,col));
+    if(micro.length)html(c2,'<b>Microbiología</b>'+table(micro,col));
+    const ec=chem.find(x=>/CONDUCTIVIDAD/.test(x.name))||chem.find(x=>/SOLIDOS DISUELTOS/.test(x.name));
+    if(ec){tds=/SOLIDOS/.test(ec.name)?ec.median:ecToTDS(ec.median);const cl=classifyTDS(tds);html(c2,`<div><span class="pill ${cl.cls}">${esc(cl.l)}</span> surface water TDS≈${fmt(tds,0)} mg/L (median across ${ec.sites.size} points)</div>`);}
+    ecoli=micro.find(x=>/ESCHERICHIA/.test(x.name))||micro[0];
+    src(c2,'IDEAM — Data Histórica de Calidad de Agua Superficial y Sedimentos, datos.gov.co 62gv-3857','https://www.datos.gov.co/d/62gv-3857');
+    cov('Water chemistry',chem.length?'ok':'none',`${chem.length} parámetros IDEAM${R>r?' ('+R+' km)':''}`);
+    cov('Microbiology (E. coli etc.)',micro.length?'ok':'none',micro.length?`IDEAM ${micro.reduce((s,x)=>s+x.n,0)} results${R>r?' ('+R+' km)':''}`:'no bacteriology at IDEAM points nearby');
+  }catch(e){fail(c2,e,'IDEAM');cov('Water chemistry','missing',e.message);}
+
+  // IDEAM stations
+  const c3=card('co-st','Estaciones hidrometeorológicas (IDEAM)','sources',{closed:true});
+  try{
+    const b=bbox(lat,lon,r);const w=`latitud between ${b[1]} and ${b[3]} AND longitud between ${b[0]} and ${b[2]}`;
+    const st=(await getJSON(`${SODA}hp9r-jxuu.json?$where=${encodeURIComponent(w)}&$limit=500`)).map(x=>({...x,d:km([lat,lon],[+x.latitud,+x.longitud])})).sort((x,y)=>x.d-y.d);
+    const act=st.filter(x=>/activ/i.test(x.estado||''));const cat={};for(const x of act){const k=x.categoria||'?';cat[k]=(cat[k]||0)+1;}
+    for(const x of act.slice(0,80))dot(+x.latitud,+x.longitud,/limn|hidro/i.test(x.categoria||'')?'sea':'fresh',`<b>IDEAM ${esc(x.codigo)}</b><br>${esc(x.nombre)}<br>${esc(x.categoria)} · ${esc(x.corriente||'')} · ${fmt(x.d,1)} km`);
+    setStatus(c3,`${act.length} activas / ${st.length}`,act.length?'ok':'none');
+    html(c3,`<div>${Object.entries(cat).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`${esc(k)} ×${v}`).join(' · ')||'<span class="none">Ninguna estación activa en el radio.</span>'}</div>`);
+    const hyd=act.filter(x=>/limn|hidro/i.test(x.categoria||''));
+    if(hyd.length)html(c3,table(hyd.slice(0,10),[{h:'Código',f:x=>esc(x.codigo)},{h:'Nombre',f:x=>esc(x.nombre)},{h:'Corriente',f:x=>esc(x.corriente||'')},{h:'Tipo',f:x=>esc(x.categoria)},{h:'km',num:1,f:x=>fmt(x.d,1)}]));
+    html(c3,'<div class="hint">Series de caudal y nivel se descargan en DHIME (dhime.ideam.gov.co) por código de estación; no hay API pública de series en v0.</div>');
+    src(c3,'IDEAM — Catálogo Nacional de Estaciones, datos.gov.co hp9r-jxuu','https://www.datos.gov.co/d/hp9r-jxuu');
+    cov('Gauges & monitoring stations (IDEAM)',act.length?'ok':'none',`${act.length} estaciones activas · ${hyd.length} hidrológicas`);
+  }catch(e){fail(c3,e,'IDEAM CNE');cov('Gauges & monitoring stations (IDEAM)','missing',e.message);}
+
+  // providers
+  const c4=card('co-sui','Prestadores de acueducto y alcantarillado (Superservicios)','system');
+  let utility=null;
+  try{
+    let rows=[];
+    for(const nm of cands){const rr=await getJSON(`${SODA}6j4v-nnai.json?$q=${encodeURIComponent(nm)}&$limit=500`).catch(()=>[]);rows=rr.filter(x=>norm(x.municipio_prestacion)===nm&&(!dep||norm(x.departamento_prestacion).includes(dep.split(' ')[0])));if(rows.length)break;}
+    const acu=rows.filter(x=>/ACUEDUCTO/i.test(x.servicio)),alc=rows.filter(x=>/ALCANTARILLADO/i.test(x.servicio));
+    const uniq=arr=>{const s=new Set();return arr.filter(x=>!s.has(x.nombre)&&s.add(x.nombre));};
+    utility=uniq(acu)[0]?.nombre||null;
+    setStatus(c4,`${uniq(acu).length} acueducto · ${uniq(alc).length} alcantarillado`,acu.length?'ok':'warn');
+    if(rows.length)html(c4,table(uniq(rows).slice(0,12),[{h:'Prestador',f:x=>esc(x.nombre)},{h:'Servicios',f:x=>esc(uniq(rows.filter(y=>y.nombre===x.nombre)).length?rows.filter(y=>y.nombre===x.nombre).map(y=>y.servicio).join(', '):x.servicio)},{h:'Tipo',f:x=>esc(x.tipo_prestador||x.clasificacion||'')},{h:'Estado',f:x=>esc(x.estado||'')}]));
+    else html(c4,'<div>No registered provider found for this municipio in the SUI registry — common for rural La Guajira and Pacific communities, where supply is a community acueducto, wells (jagüeyes) or trucking.</div>');
+    html(c4,'<div class="hint">Registro SUI (2021 snapshot on datos.gov.co). Small community acueductos are often unregistered; SIASAR holds the rural inventory (not yet wired).</div>');
+    src(c4,'Superservicios — Acueductos en Colombia (SUI), datos.gov.co 6j4v-nnai','https://www.datos.gov.co/d/6j4v-nnai');
+    cov('Water utility / service area',acu.length?'ok':'none',utility||'no registered acueducto provider');
+  }catch(e){fail(c4,e,'SUI');cov('Water utility / service area','missing',e.message);}
+  return {tds,tdsLabel:'Surface water (IDEAM median EC)',micro:ecoli?{name:ecoli.name,n:ecoli.n,max:ecoli.max,median:ecoli.median,unit:ecoli.unit,last:ecoli.last}:null,utility,irca,chemN};
+}
+
 function adFeedOptions(ctx){
   const c=card('feed','Feed-water candidates & first-order sizing','energy');
   const Q=ctx.Q||0;const psh=ctx.solar?.worst||null;
@@ -499,7 +590,7 @@ function adCoverage(){
   if(!ok.some(x=>/chemistry|Chemistry/.test(x.topic)))gaps.push('Full RO feed-water analysis: TDS, major ions, silica, boron, hardness, turbidity/SDI, TOC');
   if(!ok.some(x=>/Groundwater|wells|USGS/.test(x.topic)))gaps.push('Well inventory with depth, yield and conductivity; aquifer map from the national geological survey');
   if(gaps.length)html(c,`<div><b>Minimum field campaign before sizing:</b><ul class="plain">${gaps.map(g=>`<li>${esc(g)}</li>`).join('')}</ul></div>`);
-  html(c,'<div class="hint">Not yet wired in v0 (planned for the backend): WorldPop/GHSL population, Thorslund global salinity points, IGRAC brackish-groundwater polygons, HydroWASTE, Copernicus Marine SSS/SST, GEBCO bathymetry, SIVICAP/SUI (Colombia), ANA/SISAGUA (Brazil), PDF ingestion for island reports.</div>');
+  html(c,'<div class="hint">Not yet wired in v0 (planned for the backend): WorldPop/GHSL population, Thorslund global salinity points, IGRAC brackish-groundwater polygons, HydroWASTE, Copernicus Marine SSS/SST, GEBCO bathymetry, INVEMAR REDCAM + SIRH wells + SIASAR (Colombia), ANA/SISAGUA (Brazil), PDF ingestion for island reports.</div>');
 }
 
 
@@ -516,7 +607,7 @@ function renderBrief(ctx){
     {cls:solCls,l:'Sun · worst month',v:sol?`${fmt(sol.worst,1)}<small>kWh/m²/d</small>`:'—',n:sol?`${fmt(sol.ann,1)} annual · ${fmt(sol.annRain,0)} mm rain`:'no solar data'},
     {cls:ctx.pop?'info':'warn',l:'Demand',v:dem,n:ctx.pop?`${fmt(ctx.pop,0)} people × 100 L`:'enter population'},
     {cls:bestCls,l:'Best feed water',v:best?esc(best.cl?best.cl.c:'?'):'none found',n:best?`${fmt(best.tds,0)} mg/L · ${fmt(best.sec,1)} kWh/m³`:'no source with known salinity'},
-    {cls:mCls||'warn',l:'E. coli / coliforms',v:micro?(micro.max>0?`${fmt(micro.max,0)}<small>max /100 mL</small>`:'0<small>/100 mL</small>'):'not sampled',n:micro?`${micro.n} samples · last ${String(micro.last).slice(0,7)}`:'no bacteriology in open data'},
+    {cls:mCls||(ctx.irca!=null?(ctx.irca<=5?'ok':ctx.irca<=35?'warn':'bad'):'warn'),l:micro?'E. coli / coliforms':ctx.irca!=null?'IRCA risk index':'E. coli / coliforms',v:micro?(micro.max>0?`${fmt(micro.max,0)}<small>max /100 mL</small>`:'0<small>/100 mL</small>'):ctx.irca!=null?`${fmt(ctx.irca,1)}<small>/100</small>`:'not sampled',n:micro?`${micro.n} samples · last ${String(micro.last).slice(0,7)}`:ctx.irca!=null?'tap-water risk (INS); ≤5 no risk':'no bacteriology in open data'},
     {cls:util?'ok':'warn',l:'Existing supply',v:util?'utility':'self-supplied',n:util?esc(util):'no registered system found'},
     {cls:covCls,l:'Data coverage',v:`${okN}<small>/ ${totN}</small>`,n:ctx.wwtp?`WWTP nearby${ctx.wwtpName?': '+esc(ctx.wwtpName):''}`:'no treatment plant mapped'}];
   const verdict=[];
@@ -551,10 +642,13 @@ async function scan(lat,lon){
     }else if(['FR','GP','MQ','GF','RE','YT','BL','MF','PM'].includes(cc)){
       const h=await adHubeau(lat,lon,r);ctx.tds=h.tds??null;ctx.tdsLabel=h.tdsLabel;ctx.utility=h.utility||null;ctx.micro=h.micro||null;
       ctx.wwtp=coverage.some(x=>/Wastewater treatment \(OSM\)/.test(x.topic)&&x.state==='ok');
+    }else if(cc==='CO'){
+      const h=await adColombia(lat,lon,r,loc);ctx.tds=h.tds??null;ctx.tdsLabel=h.tdsLabel;ctx.utility=h.utility||null;ctx.micro=h.micro||null;ctx.irca=h.irca;
+      ctx.wwtp=coverage.some(x=>/Wastewater treatment \(OSM\)/.test(x.topic)&&x.state==='ok');
     }else{
       const c=card('nat','National monitoring networks','quality');
       setStatus(c,'no adapter yet','warn');
-      html(c,`<div>No national adapter wired for <b>${esc(loc.addr.country||cc||'this country')}</b> in v0. Global layers above (OSM, NASA POWER, GloFAS) still apply.${cc==='CO'?' Colombia sources to wire next: IDEAM/DHIME (datos.gov.co SODA), SIRH/FUNIAS wells, SIVICAP (INS, E. coli/IRCA by municipio), SUI providers, INVEMAR REDCAM coastal quality, SIASAR rural systems.':''}${cc==='BR'?' Brazil: ANA SNIRH geoservices, SISAGUA, SNIS, SIAGAS wells.':''}${cc==='GB'?' UK: Environment Agency hydrology, groundwater and bathing-water APIs.':''}${cc==='BS'?' Bahamas: WSC and BRGM/USGS reports (PDF ingestion); OSM wells shown above.':''}</div>`);
+      html(c,`<div>No national adapter wired for <b>${esc(loc.addr.country||cc||'this country')}</b> in v0. Global layers above (OSM, NASA POWER, GloFAS) still apply.${cc==='BR'?' Brazil: ANA SNIRH geoservices, SISAGUA, SNIS, SIAGAS wells.':''}${cc==='GB'?' UK: Environment Agency hydrology, groundwater and bathing-water APIs.':''}${cc==='BS'?' Bahamas: WSC and BRGM/USGS reports (PDF ingestion); OSM wells shown above.':''}</div>`);
       cov('National monitoring networks','none','no adapter for '+(cc||'country'));
       ctx.wwtp=coverage.some(x=>/Wastewater treatment \(OSM\)/.test(x.topic)&&x.state==='ok');
     }
