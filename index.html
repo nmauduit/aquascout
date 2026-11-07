@@ -104,6 +104,8 @@ section.card.loading>.body::before{content:"Fetching from source…";display:blo
 .needlegend .bar i{flex:1}
 .needlegend .lbl{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--muted)}
 .desal-ico{width:14px;height:14px;transform:rotate(45deg);border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.4)}
+.sun-ico{width:18px;height:18px;border-radius:50%;background:#f3a81c;border:2px solid #7a4a00;box-shadow:0 0 0 3px rgba(243,168,28,.35);display:flex;align-items:center;justify-content:center;font-size:11px;line-height:1;color:#3b2500;font-weight:700}
+.sun-ico.hollow{background:#fff7e0}
 
 @media (max-width:860px){
   .legend{font-size:10px;padding:4px 7px;gap:0;flex-direction:row;flex-wrap:wrap;column-gap:8px;max-width:60%}
@@ -170,6 +172,7 @@ section.card.closed>.body{display:none}
         <label class="small">Radius km <input id="radius" type="number" min="1" max="50" value="10"></label>
         <label class="small">People <input id="pop" type="number" min="0" step="50" placeholder="auto"></label>
         <label class="small"><input id="gsw" type="checkbox"> Surface-water layer</label>
+        <button id="solarbtn" class="small" title="List every solar / renewable-powered desalination plant in the inventory">☀ Solar RO inventory</button>
       </div>
     </header>
     <div id="dossier">
@@ -271,7 +274,16 @@ async function loadDesalOSM(){
 desalGroup.on('add',async()=>{if(desalGroup.getLayers().length)return;try{const list=await loadDesalOSM();for(const p of list){L.marker([p.la,p.lo],{icon:desalIcon(feedColor(p.feed),false)}).bindPopup(`<b>${esc(p.name)}</b><br>${esc(p.status)}${p.capacity?' · '+esc(p.capacity):''}${p.method?' · '+esc(p.method):''}${p.feed?'<br>feed: '+esc(p.feed):''}${p.operator?'<br>'+esc(p.operator):''}<br><a href="https://www.openstreetmap.org/${p.id}" target="_blank" rel="noopener">OpenStreetMap</a>`).addTo(desalGroup);}}catch(e){console.warn('desal layer',e);}});
 async function loadPlanned(){if(plannedList)return plannedList;try{const j=await getJSON('data/planned-desal.json');plannedList=j.plants||[];}catch(e){plannedList=[];}return plannedList;}
 const statusStyle=p=>{const st=p.status||'';const solar=p.power&&/solar/i.test(p.power);const col=/cancel/i.test(st)?'#9aa5ad':solar?'#b26a00':feedColor(p.feed);const built=/operat|existing|built|commissioned|inaugurat|delivered|implemented/i.test(st)&&!/cancel|stalled|idle/i.test(st);return{col,hollow:!built};};
-plannedGroup.on('add',async()=>{if(plannedGroup.getLayers().length)return;const list=await loadPlanned();for(const p of list){const ss=statusStyle(p);L.marker([p.lat,p.lon],{icon:desalIcon(ss.col,ss.hollow)}).bindPopup(`<b>${esc(p.name)}</b><br>${esc(p.region||'')}, ${esc(p.country)}<br><b>${esc(p.status)}</b>${p.capacity_m3d?' · '+fmt(p.capacity_m3d,0)+' m³/d':''}<br>${esc(p.technology||'')} · feed: ${esc(p.feed||'?')} · power: ${esc(p.power||'?')}${p.serves?'<br>serves: '+esc(p.serves):''}${p.operator?'<br>'+esc(p.operator):''}${p.approx?'<br><i>location approximate</i>':''}<br><a href="${esc(p.source)}" target="_blank" rel="noopener">source</a>`).addTo(plannedGroup);}});
+const plantPopup=p=>`<b>${esc(p.name)}</b><br>${esc(p.region||'')}, ${esc(p.country)}<br><b>${esc(p.status)}</b>${p.capacity_m3d?' · '+fmt(p.capacity_m3d,0)+' m³/d':''}<br>${esc(p.technology||'')} · feed: ${esc(p.feed||'?')} · power: ${esc(p.power||'?')}${p.serves?'<br>serves: '+esc(p.serves):''}${p.operator?'<br>'+esc(p.operator):''}${p.approx?'<br><i>location approximate</i>':''}<br><a href="${esc(p.source)}" target="_blank" rel="noopener">source</a>`;
+plannedGroup.on('add',async()=>{if(plannedGroup.getLayers().length)return;const list=await loadPlanned();for(const p of list){const ss=statusStyle(p);L.marker([p.lat,p.lon],{icon:desalIcon(ss.col,ss.hollow)}).bindPopup(plantPopup(p)).addTo(plannedGroup);}});
+// --- Solar / renewable-powered desal: dedicated inventory layer ---
+const isRenew=p=>/solar|\bpv\b|wind|renewab|geotherm|otec|csp/i.test(p.power||'');
+const renewClass=p=>{const s=p.power||'';if(/\+\s*grid|grid\s*\+|partial|offset|assist|co-gen/i.test(s))return 'hybrid';if(/batter/i.test(s))return 'off-grid + battery';if(/battery-free|no battery/i.test(s))return 'off-grid, battery-free';return /solar|pv/i.test(s)?'solar':'renewable';};
+const sunIcon=hollow=>L.divIcon({className:'',html:`<div class="sun-ico${hollow?' hollow':''}">☀</div>`,iconSize:[18,18],iconAnchor:[9,9]});
+const solarGroup=L.layerGroup();
+solarGroup.on('add',async()=>{if(solarGroup.getLayers().length)return;const list=(await loadPlanned()).filter(isRenew);for(const p of list){const ss=statusStyle(p);L.marker([p.lat,p.lon],{icon:sunIcon(ss.hollow),zIndexOffset:500}).bindPopup(plantPopup(p)+`<br><i>${esc(renewClass(p))}</i>`).addTo(solarGroup);}});
+async function solarInventoryHTML(){const list=(await loadPlanned()).filter(isRenew).sort((a,b)=>(b.capacity_m3d||0)-(a.capacity_m3d||0));const byC={};for(const p of list)(byC[p.country]=byC[p.country]||[]).push(p);
+  return `<div class="muted">${list.length} solar / renewable-powered desalination plants in ${Object.keys(byC).length} countries (curated inventory). ☀ markers on the map; solid = operating, hollow = planned/pilot.</div>`+table(list,[{h:'Plant',f:r=>`<a href="#" data-ll="${r.lat},${r.lon}">${esc(r.name)}</a>`},{h:'Cc',f:r=>esc(r.country)},{h:'Status',f:r=>esc(r.status)},{h:'m³/d',num:1,f:r=>r.capacity_m3d?fmt(r.capacity_m3d,0):'—'},{h:'Feed',f:r=>esc(r.feed||'')},{h:'Power',f:r=>esc(r.power||'')},{h:'Mode',f:r=>esc(renewClass(r))}]);}
 
 // foldable layers panel (touch devices keep it open otherwise)
 (function(){const el=ctl.getContainer();const x=document.createElement('div');x.className='lyr-close';x.textContent='×';x.title='Close';x.setAttribute('role','button');const t=document.createElement('div');t.className='lyr-title';t.textContent='Map layers';
@@ -285,6 +297,13 @@ plannedGroup.on('add',async()=>{if(plannedGroup.getLayers().length)return;const 
 ctl.addOverlay(needGroup,'Water need — rural safely-managed water (WHO/UNICEF JMP)');
 ctl.addOverlay(desalGroup,'Existing desalination plants (OpenStreetMap)');
 ctl.addOverlay(plannedGroup,'Desal plants — curated inventory (solid = operating, hollow = planned/stalled, grey = cancelled, orange = solar)');
+ctl.addOverlay(solarGroup,'☀ Solar / renewable-powered desal (dedicated inventory)');
+document.getElementById('solarbtn').addEventListener('click',async()=>{
+  if(!map.hasLayer(solarGroup))solarGroup.addTo(map);
+  dossier.innerHTML='<section class="card"><h2><span>☀ Solar &amp; renewable-powered desalination — inventory</span><span class="st ok">curated</span></h2><div class="body"><div class="muted">loading…</div></div></section>';
+  const body=dossier.querySelector('.body');body.innerHTML=await solarInventoryHTML();
+  body.querySelectorAll('a[data-ll]').forEach(a=>a.addEventListener('click',ev=>{ev.preventDefault();const [la,lo]=a.dataset.ll.split(',').map(Number);map.flyTo([la,lo],9);solarGroup.eachLayer(m=>{if(Math.abs(m.getLatLng().lat-la)<1e-6&&Math.abs(m.getLatLng().lng-lo)<1e-6)m.openPopup();});}));
+});
 // prefetch quietly so the brief tiles have data
 setTimeout(()=>{loadJMP();loadPlanned();loadSub();loadDesalOSM().catch(()=>{});},1500);
 
@@ -316,7 +335,9 @@ async function adDesalNearby(lat,lon){
     const pn=pl.map(p=>({...p,la:p.lat,lo:p.lon,d:km([lat,lon],[p.lat,p.lon]),kind:'curated'})).filter(p=>p.d<=300).sort((a,b)=>a.d-b.d);
     for(const p of ex.slice(0,20))L.marker([p.la,p.lo],{icon:desalIcon(feedColor(p.feed),false)}).bindPopup(`<b>${esc(p.name)}</b><br>${esc(p.status)} · ${fmt(p.d,0)} km`).addTo(layerGroup);
     for(const p of pn.slice(0,20)){const ss=statusStyle(p);L.marker([p.la,p.lo],{icon:desalIcon(ss.col,ss.hollow)}).bindPopup(`<b>${esc(p.name)}</b><br>${esc(p.status)} · ${fmt(p.d,0)} km`).addTo(layerGroup);}
-    setStatus(c,`${ex.length} existing ≤150 km · ${pn.length} planned/recent ≤300 km`,ex.length||pn.length?'ok':'none');
+    const sol=pn.filter(isRenew);
+    setStatus(c,`${ex.length} existing ≤150 km · ${pn.length} curated ≤300 km${sol.length?` · ☀ ${sol.length} solar/renewable`:''}`,ex.length||pn.length?'ok':'none');
+    if(sol.length)html(c,'<b>☀ Solar / renewable-powered nearby</b>'+table(sol.slice(0,8),[{h:'Plant',f:r=>esc(r.name)},{h:'Status',f:r=>esc(r.status)},{h:'m³/d',num:1,f:r=>r.capacity_m3d?fmt(r.capacity_m3d,0):'—'},{h:'Power',f:r=>esc(r.power||'')},{h:'km',num:1,f:r=>fmt(r.d,0)}]));
     if(ex.length)html(c,'<b>Existing (OpenStreetMap)</b>'+table(ex.slice(0,8),[{h:'Plant',f:r=>esc(r.name)},{h:'Status',f:r=>esc(r.status)},{h:'Capacity',f:r=>esc(r.capacity||'—')},{h:'Feed',f:r=>esc(r.feed||'—')},{h:'km',num:1,f:r=>fmt(r.d,0)}]));
     if(pn.length)html(c,'<b>Planned / recent (curated)</b>'+table(pn.slice(0,8),[{h:'Plant',f:r=>esc(r.name)},{h:'Status',f:r=>esc(r.status)},{h:'m³/d',num:1,f:r=>fmt(r.capacity_m3d,0)},{h:'Power',f:r=>esc(r.power||'')},{h:'km',num:1,f:r=>fmt(r.d,0)}]));
     if(!ex.length&&!pn.length)html(c,'<div class="none">No desalination plant mapped within 150 km (OSM) and nothing in the curated planned list within 300 km.</div>');
