@@ -501,10 +501,14 @@ async function adColombia(lat,lon,r,loc){
   const c2=card('co-q','Calidad de aguas superficiales (IDEAM, red nacional)','quality');
   let ecoli=null,tds=null,chemN=0;
   try{
+    const num=t=>parseFloat(String(t??'').replace(',','.'));
+    let all=[];
+    if(dep){all=await getJSON(`${SODA}62gv-3857.json?$where=${encodeURIComponent(`upper(departamento)='${dep.replace(/'/g,"''")}'`)}&$limit=50000`,{timeout:90000}).catch(()=>[]);}
+    if(!all.length){for(const nm of cands){all=await getJSON(`${SODA}62gv-3857.json?$where=${encodeURIComponent(`upper(municipio)='${nm.replace(/'/g,"''")}'`)}&$limit=50000`,{timeout:90000}).catch(()=>[]);if(all.length)break;}}
+    for(const x of all){x.latitud=num(x.latitud);x.longitud=num(x.longitud);x._d=(isNaN(x.latitud)||isNaN(x.longitud))?Infinity:km([lat,lon],[x.latitud,x.longitud]);}
     let R=r,rows=[];
-    for(const mult of [1,3,8]){R=r*mult;const b=bbox(lat,lon,R);const w=`latitud between ${b[1]} and ${b[3]} AND longitud between ${b[0]} and ${b[2]}`;
-      rows=await getJSON(`${SODA}62gv-3857.json?$where=${encodeURIComponent(w)}&$limit=20000`,{timeout:60000});if(rows.length)break;}
-    if(!rows.length)throw new Error('no IDEAM quality points within '+R+' km');
+    for(const mult of [1,3,8]){R=r*mult;rows=all.filter(x=>x._d<=R);if(rows.length)break;}
+    if(!rows.length)throw new Error(all.length?`${all.length} IDEAM results in ${dep||cands[0]} but none within ${R} km`:'no IDEAM quality data for this departamento');
     const pts={};const g={};
     for(const x of rows){const v=parseFloat(String(x.resultado).replace(',','.'));const nm=x.propiedad_observada;if(!nm)continue;
       const key=x.nombre_del_punto_de_monitoreo;if(!pts[key])pts[key]={name:key,la:+x.latitud,lo:+x.longitud,river:x.corriente,n:0,last:''};pts[key].n++;if((x.fecha||'')>pts[key].last)pts[key].last=x.fecha;
@@ -550,15 +554,15 @@ async function adColombia(lat,lon,r,loc){
   let utility=null;
   try{
     let rows=[];
-    for(const nm of cands){const rr=await getJSON(`${SODA}6j4v-nnai.json?$q=${encodeURIComponent(nm)}&$limit=500`).catch(()=>[]);rows=rr.filter(x=>norm(x.municipio_prestacion)===nm&&(!dep||norm(x.departamento_prestacion).includes(dep.split(' ')[0])));if(rows.length)break;}
+    for(const nm of cands){const rr=await getJSON(`${SODA}4qkq-csdn.json?$where=${encodeURIComponent(`upper(municipio_prestacion)='${nm.replace(/'/g,"''")}'`)}&$limit=1000`).catch(()=>[]);rows=rr.filter(x=>norm(x.municipio_prestacion)===nm&&/ACUEDUCTO|ALCANTARILLADO/i.test(x.servicio||'')&&(!dep||!x.departamento_prestacion||norm(x.departamento_prestacion).split(' ')[0]===dep.split(' ')[0]||dep.includes(norm(x.departamento_prestacion).split(' ')[0])));if(rows.length)break;}
     const acu=rows.filter(x=>/ACUEDUCTO/i.test(x.servicio)),alc=rows.filter(x=>/ALCANTARILLADO/i.test(x.servicio));
     const uniq=arr=>{const s=new Set();return arr.filter(x=>!s.has(x.nombre)&&s.add(x.nombre));};
     utility=uniq(acu)[0]?.nombre||null;
     setStatus(c4,`${uniq(acu).length} acueducto · ${uniq(alc).length} alcantarillado`,acu.length?'ok':'warn');
-    if(rows.length)html(c4,table(uniq(rows).slice(0,12),[{h:'Prestador',f:x=>esc(x.nombre)},{h:'Servicios',f:x=>esc(uniq(rows.filter(y=>y.nombre===x.nombre)).length?rows.filter(y=>y.nombre===x.nombre).map(y=>y.servicio).join(', '):x.servicio)},{h:'Tipo',f:x=>esc(x.tipo_prestador||x.clasificacion||'')},{h:'Estado',f:x=>esc(x.estado||'')}]));
+    if(rows.length)html(c4,table(uniq(rows).slice(0,12),[{h:'Prestador',f:x=>esc(x.nombre)},{h:'Servicios',f:x=>esc([...new Set(rows.filter(y=>y.nombre===x.nombre).map(y=>y.servicio))].join(', '))},{h:'Tipo',f:x=>esc(x.tipo_prestador||x.clasificacion||'')},{h:'Estado',f:x=>esc(x.estado||'')}]));
     else html(c4,'<div>No registered provider found for this municipio in the SUI registry — common for rural La Guajira and Pacific communities, where supply is a community acueducto, wells (jagüeyes) or trucking.</div>');
-    html(c4,'<div class="hint">Registro SUI (2021 snapshot on datos.gov.co). Small community acueductos are often unregistered; SIASAR holds the rural inventory (not yet wired).</div>');
-    src(c4,'Superservicios — Acueductos en Colombia (SUI), datos.gov.co 6j4v-nnai','https://www.datos.gov.co/d/6j4v-nnai');
+    html(c4,'<div class="hint">RUPS = Registro Único de Prestadores (Superservicios). Small community acueductos are often unregistered; SIASAR holds the rural inventory (not yet wired).</div>');
+    src(c4,'Superservicios — RUPS, datos.gov.co 4qkq-csdn','https://www.datos.gov.co/d/4qkq-csdn');
     cov('Water utility / service area',acu.length?'ok':'none',utility||'no registered acueducto provider');
   }catch(e){fail(c4,e,'SUI');cov('Water utility / service area','missing',e.message);}
   return {tds,tdsLabel:'Surface water (IDEAM median EC)',micro:ecoli?{name:ecoli.name,n:ecoli.n,max:ecoli.max,median:ecoli.median,unit:ecoli.unit,last:ecoli.last}:null,utility,irca,chemN};
