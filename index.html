@@ -183,7 +183,9 @@ const gebco=L.tileLayer.wms('https://www.gebco.net/data_and_products/gebco_web_s
 // ArcGIS dynamic MapServer as a tile layer (export per tile)
 const ArcTile=L.TileLayer.extend({getTileUrl:function(c){const z=c.z,n=Math.pow(2,z);const x0=c.x/n*360-180,x1=(c.x+1)/n*360-180;const la=y=>{const t=Math.PI-2*Math.PI*y/n;return 180/Math.PI*Math.atan(0.5*(Math.exp(t)-Math.exp(-t)));};const y0=la(c.y+1),y1=la(c.y);return `${this._url}/export?bbox=${x0},${y0},${x1},${y1}&bboxSR=4326&imageSR=3857&size=256,256&format=png32&transparent=true&layers=show:${this.options.layerIds}&f=image`;}});
 const whymap=new ArcTile('https://services.bgr.de/arcgis/rest/services/grundwasser/whymap_gwr/MapServer',{layerIds:'10,11',opacity:.45,attribution:'WHYMAP © BGR/UNESCO'});
-const ctl=L.control.layers(null,{'Surface water occurrence (JRC)':gsw,'Bathymetry (GEBCO)':gebco,'Groundwater resources & saline areas (WHYMAP)':whymap},{collapsed:true,position:'topright'}).addTo(map);
+const bgsSEC=new ArcTile('https://map.bgs.ac.uk/arcgis/rest/services/Africa_Groundwater/Africa_Groundwater_v2/MapServer',{layerIds:'11',opacity:.55,attribution:'Africa Groundwater Atlas © BGS'});
+const bgsDepth=new ArcTile('https://map.bgs.ac.uk/arcgis/rest/services/Africa_Groundwater/Africa_Groundwater_v2/MapServer',{layerIds:'1',opacity:.55,attribution:'Africa Groundwater Atlas © BGS'});
+const ctl=L.control.layers(null,{'Surface water occurrence (JRC)':gsw,'Bathymetry (GEBCO)':gebco,'Groundwater resources & saline areas (WHYMAP)':whymap,'Africa: groundwater conductivity (BGS atlas)':bgsSEC,'Africa: depth to groundwater (BGS atlas)':bgsDepth},{collapsed:true,position:'topright'}).addTo(map);
 let marker,circle,layerGroup=L.layerGroup().addTo(map);
 const colors={sea:'#2c5e8a',brackish:'#4f8a8b',fresh:'#2f8f5b',waste:'#7a5a3a'};
 function dot(lat,lon,kind,label){L.circleMarker([lat,lon],{radius:6,color:colors[kind],fillColor:colors[kind],fillOpacity:.8,weight:1}).bindPopup(label).addTo(layerGroup);}
@@ -303,7 +305,7 @@ const dossier=$('#dossier');
 const cards={};
 const GROUPS=[['site','Site'],['sources','Water sources & quantity'],['quality','Water quality'],['system','Existing water system'],['energy','Solar & plant sizing'],['coverage','Data coverage']];
 const groupEl={};let progressEl=null,progressItems={};
-const SRC_LABELS={loc:'Place & elevation (OSM, Open-Meteo)',solar:'Solar & rain (NASA POWER)',osm:'Water bodies & infrastructure (OpenStreetMap)',flow:'River discharge (GloFAS)',demand:'Community & demand',usgs:'USGS gauges & wells',wqp:'Water Quality Portal (chemistry, E. coli)',util:'EPA water utility',echo:'EPA ECHO wastewater',hubeau:"Hub'Eau (eau potable, nappes, rivières)",'co-irca':'INS SIVICAP (IRCA)','co-q':'IDEAM water quality','co-st':'IDEAM stations','co-sui':'Superservicios RUPS',whymap:'WHYMAP global hydrogeology',need:'Water access (WHO/UNICEF JMP)',desal:'Desalination plants nearby',gebco:'GEBCO sea depth','br-st':'ANA hydromet network','br-gw':'RIMAS groundwater wells','br-ete':'ANA sewage plants','br-note':'Brazil quality (pending)',nat:'National network',feed:'Feed-water sizing',cov:'Coverage report'};
+const SRC_LABELS={loc:'Place & elevation (OSM, Open-Meteo)',solar:'Solar & rain (NASA POWER)',osm:'Water bodies & infrastructure (OpenStreetMap)',flow:'River discharge (GloFAS)',demand:'Community & demand',usgs:'USGS gauges & wells',wqp:'Water Quality Portal (chemistry, E. coli)',util:'EPA water utility',echo:'EPA ECHO wastewater',hubeau:"Hub'Eau (eau potable, nappes, rivières)",'co-irca':'INS SIVICAP (IRCA)','co-q':'IDEAM water quality','co-st':'IDEAM stations','co-sui':'Superservicios RUPS',whymap:'WHYMAP global hydrogeology',need:'Water access (WHO/UNICEF JMP)',desal:'Desalination plants nearby',gebco:'GEBCO sea depth','br-st':'ANA hydromet network','br-gw':'RIMAS groundwater wells','br-ete':'ANA sewage plants','br-note':'Brazil quality (pending)',wpdx:'WPdx water points',bgs:'Africa Groundwater Atlas (BGS)',portals:'National portals',nat:'National network',feed:'Feed-water sizing',cov:'Coverage report'};
 let scanT0=0,scanTimer=null;
 function scaffold(){dossier.innerHTML='';progressEl=document.createElement('div');progressEl.className='status';progressEl.innerHTML='<div class="hd"><span>Scanning…</span><span class="t">0 s</span></div><ul></ul>';dossier.appendChild(progressEl);progressItems={};scanT0=Date.now();clearInterval(scanTimer);scanTimer=setInterval(()=>{const t=progressEl.querySelector('.hd .t');if(t&&!progressEl.classList.contains('complete'))t.textContent=Math.round((Date.now()-scanT0)/1000)+' s';},1000);for(const [id,label] of GROUPS){const g=document.createElement('div');g.className='grp';g.id='g-'+id;g.hidden=true;g.innerHTML=`<h3>${esc(label)}</h3>`;dossier.appendChild(g);groupEl[id]=g;}}
 function progress(id,state){if(!progressEl)return;let it=progressItems[id];if(!it){it=document.createElement('li');it.innerHTML=`<i></i><span>${esc(SRC_LABELS[id]||id)}</span><em class="ms"></em>`;it.dataset.t0=Date.now();progressEl.querySelector('ul').appendChild(it);progressItems[id]=it;}it.className=state;if(state!=='run')it.querySelector('.ms').textContent=((Date.now()-(+it.dataset.t0))/1000).toFixed(1)+' s';const n=Object.values(progressItems),d=n.filter(x=>x.className!=='run').length,bad=n.filter(x=>x.className==='err').length;progressEl.querySelector('.hd span').textContent=d<n.length?`Fetching ${d}/${n.length} sources…`:`Scan complete — ${n.length} sources${bad?`, ${bad} failed`:''}`;}
@@ -652,6 +654,97 @@ async function adWorldPop(lat,lon,r){
   return {pop:Math.round(data.total_population),R};
 }
 
+// ---------- WPdx water points (global; dense in Africa, also Haiti, Bangladesh, India, Guatemala) ----------
+async function adWPdx(lat,lon,r){
+  const c=card('wpdx','Water points: boreholes, handpumps, springs (WPdx)','sources');
+  try{
+    const R=Math.min(r,25);
+    const u=`https://data.waterpointdata.org/resource/eqje-vguj.json?$where=${encodeURIComponent(`within_circle(new_georeferenced_column_,${lat},${lon},${R*1000}) AND is_latest=true`)}&$select=${encodeURIComponent('wpdx_id,lat_deg,lon_deg,status_clean,status_id,water_source_clean,water_source_category,water_tech_clean,install_year,management_clean,pay_clean,fecal_coliform_presence,fecal_coliform_value,subjective_quality_clean,served_population,local_population,report_date,clean_adm2,is_urban')}&$limit=3000`;
+    const rows=await getJSON(u,{timeout:60000});
+    if(!rows.length){setStatus(c,'none within '+R+' km','none');html(c,`<div class="none">No WPdx records within ${R} km. WPdx covers ~60 countries (densest: Nigeria, Uganda, Sierra Leone, Liberia, Ghana, Ethiopia, Kenya, Tanzania, Zimbabwe, Eswatini, Haiti, Bangladesh).</div>`);cov('Water points (WPdx)','none','no records');return null;}
+    const pts=rows.map(x=>({...x,la:+x.lat_deg,lo:+x.lon_deg,d:km([lat,lon],[+x.lat_deg,+x.lon_deg])})).sort((a,b)=>a.d-b.d);
+    const cnt=(k,f)=>{const o={};for(const x of pts){const v=f?f(x):x[k];const kk=v||'unknown';o[kk]=(o[kk]||0)+1;}return Object.entries(o).sort((a,b)=>b[1]-a[1]);};
+    const st=cnt('status_clean'),src_=cnt('water_source_clean'),tech=cnt('water_tech_clean'),mg=cnt('management_clean');
+    const func=pts.filter(x=>/^Functional/i.test(x.status_clean||'')).length,nonf=pts.filter(x=>/Non-Functional|Abandoned/i.test(x.status_clean||'')).length;
+    const fc=pts.filter(x=>x.fecal_coliform_presence),fcPos=fc.filter(x=>/true|yes|present|positive/i.test(x.fecal_coliform_presence)).length;
+    const served=pts.reduce((a,x)=>a+(+x.served_population||0),0);
+    for(const x of pts.slice(0,400)){const ok=/^Functional/i.test(x.status_clean||'');L.circleMarker([x.la,x.lo],{radius:4,color:ok?'#1f7a4d':/Non|Aband/i.test(x.status_clean||'')?'#b3261e':'#b26a00',fillOpacity:.8,weight:1}).bindPopup(`<b>${esc(x.water_source_clean||'water point')}</b> · ${esc(x.water_tech_clean||'')}<br>${esc(x.status_clean||'status ?')}${x.install_year?' · installed '+x.install_year:''}<br>${esc(x.management_clean||'')}${x.pay_clean?' · pay: '+esc(x.pay_clean):''}${x.fecal_coliform_presence?'<br>fecal coliform: '+esc(x.fecal_coliform_presence):''}${x.served_population?'<br>serves ~'+fmt(x.served_population,0):''}<br>${fmt(x.d,1)} km · reported ${esc(String(x.report_date||'').slice(0,10))}`).addTo(layerGroup);}
+    setStatus(c,`${pts.length} points · ${pts.length?Math.round(100*func/pts.length):0}% functional`,pts.length?(func/pts.length>=0.7?'ok':'warn'):'none');
+    html(c,`<dl class="kv"><dt>Within ${R} km</dt><dd><b>${pts.length}</b> water points (latest record each)${pts.length>=3000?' — capped at 3,000':''}</dd><dt>Functionality</dt><dd>${dotc(func/pts.length>=0.7?'ok':func/pts.length>=0.4?'warn':'bad')}<b>${fmt(100*func/pts.length,0)}%</b> functional · ${fmt(100*nonf/pts.length,0)}% non-functional/abandoned</dd><dt>Source types</dt><dd>${src_.slice(0,5).map(([k,v])=>`${esc(k)} ${v}`).join(' · ')}</dd><dt>Technology</dt><dd>${tech.slice(0,4).map(([k,v])=>`${esc(k)} ${v}`).join(' · ')}</dd><dt>Management</dt><dd>${mg.slice(0,3).map(([k,v])=>`${esc(k)} ${v}`).join(' · ')}</dd><dt>Fecal coliform tests</dt><dd>${fc.length?`${fc.length} tested · ${dotc(fcPos?'bad':'ok')}${fcPos} positive`:'<span class="none">none recorded</span>'}</dd>${served?`<dt>Population served</dt><dd>~${fmt(served,0)} (sum of point estimates)</dd>`:''}</dl>`);
+    html(c,table(pts.slice(0,8),[{h:'Source',f:x=>esc(x.water_source_clean||'')},{h:'Tech',f:x=>esc(x.water_tech_clean||'')},{h:'Status',f:x=>`${dotc(/^Functional/i.test(x.status_clean||'')?'ok':/Non|Aband/i.test(x.status_clean||'')?'bad':'warn')}${esc(x.status_clean||'?')}`},{h:'Year',num:1,f:x=>x.install_year||'—'},{h:'km',num:1,f:x=>fmt(x.d,1)}]));
+    html(c,'<div class="hint">Green = functional, red = non-functional, amber = partial/unknown. A high share of broken boreholes signals a maintenance problem a new plant must solve (operator, spare parts, payment), not just a water-quantity problem.</div>');
+    src(c,'Water Point Data Exchange (WPdx+), latest record per point',u);
+    cov('Water points (WPdx)','ok',`${pts.length} points · ${fmt(100*func/pts.length,0)}% functional`);
+    return {n:pts.length,func:func/pts.length,fcPos,fcN:fc.length,sourceTop:src_[0]?.[0]};
+  }catch(e){fail(c,e,'WPdx');cov('Water points (WPdx)','missing',e.message);return null;}
+}
+
+// ---------- BGS Africa Groundwater Atlas (identify at point) ----------
+async function adAfricaGW(lat,lon){
+  const c=card('bgs','Africa Groundwater Atlas (BGS): aquifer at this point','sources');
+  try{
+    const base='https://map.bgs.ac.uk/arcgis/rest/services/Africa_Groundwater/Africa_Groundwater_v2/MapServer';
+    const b=bbox(lat,lon,30);
+    const u=`${base}/identify?geometry=${lon},${lat}&geometryType=esriGeometryPoint&sr=4326&layers=all:1,2,3,4,5,6,7,8,9,10,11,12&tolerance=1&mapExtent=${b.join(',')}&imageDisplay=600,600,96&returnGeometry=false&f=json`;
+    const r=await getJSON(u,{timeout:45000});const res=r.results||[];
+    if(!res.length)throw new Error('no atlas value at this point (outside Africa or no data)');
+    const pick=(id)=>{const x=res.find(q=>q.layerId===id);if(!x)return null;const a=x.attributes||{};const vals=Object.entries(a).filter(([k])=>!/OBJECTID|Shape|Pixel|FID|^ID$|Count/i.test(k)).map(([k,v])=>v).filter(v=>v!=null&&v!=='Null'&&v!=='');return vals.length?String(vals[vals.length-1]):(x.value||null);};
+    const depth=pick(1),stor=pick(2),prod=pick(3),rech=pick(4),acc=pick(5),dep=pick(6),vul=pick(7),asf=pick(8),as_=pick(9),f_=pick(10),sec=pick(11),env=pick(12);
+    const secN=parseFloat(sec);const tds=isNaN(secN)?null:ecToTDS(secN);const cl=tds!=null?classifyTDS(tds):null;
+    setStatus(c,cl?cl.l:'mapped',cl?cl.cls:'');
+    html(c,`<dl class="kv"><dt>Hydrogeological environment</dt><dd>${esc(env||'—')}</dd><dt>Depth to groundwater</dt><dd>${esc(depth||'—')} m bgl</dd><dt>Productivity</dt><dd>${esc(prod||'—')} L/s</dd><dt>Recharge</dt><dd>${esc(rech||'—')} mm/yr</dd><dt>Storage</dt><dd>${esc(stor||'—')} mm</dd><dt>Conductivity (SEC)</dt><dd>${sec?`${esc(sec)} µS/cm ${cl?`<span class="pill ${cl.cls}">${esc(cl.l)}</span> ≈${fmt(tds,0)} mg/L`:''}`:'—'}</dd><dt>Arsenic &gt;10 µg/L</dt><dd>${esc(as_||'—')} (probability)</dd><dt>Fluoride &gt;1.5 mg/L</dt><dd>${esc(f_||'—')} (probability)</dd><dt>Accessibility · depletion vulnerability</dt><dd>${esc(acc||'—')} · ${esc(dep||'—')}</dd><dt>Contamination vulnerability</dt><dd>${esc(vul||'—')}</dd></dl><div class="hint">Continental model grids (1–5 km), not well measurements: use as prior for BWRO feasibility and borehole siting; confirm with the nearest WPdx points and a pump test.</div>`);
+    src(c,'BGS Africa Groundwater Atlas v2 (MacDonald et al.), ArcGIS identify',u);
+    cov('Regional hydrogeology (Africa Groundwater Atlas)','ok',`${env||'aquifer mapped'}${sec?' · SEC '+sec+' µS/cm':''}`);
+    return {tds,cl,env};
+  }catch(e){fail(c,e,'BGS');cov('Regional hydrogeology (Africa Groundwater Atlas)','missing',e.message);return {};}
+}
+
+// ---------- national portals without an API (gazetteer) ----------
+const PORTALS={
+  PE:['ANA SNIRH (snirh.ana.gob.pe) — hydrology, water rights; server often unreachable','SENAMHI (senamhi.gob.pe) — hydromet stations','SUNASS — utility benchmarks','DIGESA — drinking-water surveillance'],
+  CL:['DGA (dga.mop.gob.cl, snia) — gauges, groundwater levels, water rights','SISS — utilities','SERNAGEOMIN — hydrogeology'],
+  AR:['SNIH / INA (snih.hidricosargentina.gob.ar) — gauges','ENOHSA — rural water','datos.gob.ar'],
+  EC:['INAMHI — hydromet','ARCA — water regulation','SENAGUA/MAATE'],
+  BO:['SENAMHI Bolivia','MMAyA / AAPS'],
+  PY:['DMH — hydromet','SENASA — rural water'],
+  UY:['DINAGUA (MA) — hydrology','OSE — utility'],
+  GY:['GWI — utility','Hydromet Service'],
+  SR:['SWM — utility','Meteorological Service'],
+  VE:['INAMEH — hydromet','Hidroven — utilities'],
+  HT:['DINEPA — national water directorate (WPdx has ~6k points)'],
+  DO:['INDRHI — hydrology','INAPA / CAASD — utilities'],
+  ZA:['DWS Hydstra (dws.gov.za) — gauges, groundwater, quality','NGA — national groundwater archive'],
+  KE:['WRA — gauges, permits','WASREB — utilities','WPdx ~22k points'],
+  TZ:['MoW / basin boards','EWURA — utilities','WPdx ~17k points'],
+  UG:['MWE water atlas','WPdx ~99k points'],
+  NG:['NIHSA — hydrology','NWRI','WPdx ~99k points'],
+  ET:['MoWE','WPdx ~24k points'],
+  GH:['WRC — basins','CWSA — rural water','WPdx ~26k points'],
+  SN:['DGPRE — water resources','OFOR/OMVS'],
+  MA:['ABH (basin agencies) — groundwater, quality','ONEE — utility'],
+  TN:['DGRE — groundwater annuals','SONEDE — utility'],
+  EG:['MWRI','HCWW — utilities'],
+  MZ:['ARA (regional water administrations)','FIPAG / AIAS'],
+  MG:['APIPA / MEAH','JIRAMA — utility'],
+  NA:['MAWF / NamWater — groundwater database'],
+  BW:['DWS Botswana — groundwater'],
+  MW:['MoWS water point mapping','WPdx ~2k points'],
+  ZM:['WARMA — permits, gauges','WPdx ~7k points'],
+  ZW:['ZINWA','WPdx ~18k points'],
+  RW:['RWB — water resources','WASAC — utility','WPdx ~6k points'],
+  SL:['MoWR / SALWACO','WPdx ~30k points'],
+  LR:['NWSHPC / LWSC','WPdx ~28k points'],
+  CV:['ANAS — water & sanitation','Águas de Ponta Preta desal plants'],
+  MU:['WRU — water resources','CWA — utility'],
+  SC:['PUC — desalination operator'],
+};
+function adPortals(cc,country){
+  const list=PORTALS[cc];if(!list)return;
+  const c=card('portals','National water portals (no public API yet)','quality',{closed:true});
+  setStatus(c,`${list.length} portals`,'');
+  html(c,`<ul class="plain">${list.map(x=>`<li>${esc(x)}</li>`).join('')}</ul><div class="hint">These hold gauge, well and quality data for ${esc(country||cc)} but publish it as web viewers or reports; they are the PDF-ingestion / scraping targets for the backend.</div>`);
+}
+
 // ---------- Colombia (datos.gov.co Socrata) ----------
 const SODA='https://www.datos.gov.co/resource/';
 const norm=t=>String(t||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().trim();
@@ -838,7 +931,7 @@ function renderBrief(ctx){
     {cls:solCls,l:'Sun · worst month',v:sol?`${fmt(sol.worst,1)}<small>kWh/m²/d</small>`:'—',n:sol?`${fmt(sol.ann,1)} annual · ${fmt(sol.annRain,0)} mm rain`:'no solar data'},
     {cls:ctx.assumed?'warn':'info',l:'Demand',v:dem,n:ctx.assumed?'assumed 500 people — enter real size':`${fmt(ctx.pop,0)} people × 100 L`},
     {cls:bestCls,l:'Best feed water',v:best?esc(best.cl?best.cl.c:'?'):'none found',n:best?`${fmt(best.tds,0)} mg/L · ${fmt(best.sec,1)} kWh/m³`:'no source with known salinity'},
-    {cls:mCls||(ctx.irca!=null?(ctx.irca<=5?'ok':ctx.irca<=35?'warn':'bad'):'warn'),l:micro?'E. coli / coliforms':ctx.irca!=null?'IRCA risk index':'E. coli / coliforms',v:micro?(micro.max>0?`${fmt(micro.max,0)}<small>max /100 mL</small>`:'0<small>/100 mL</small>'):ctx.irca!=null?`${fmt(ctx.irca,1)}<small>/100</small>`:'not sampled',n:micro?`${micro.n} samples · last ${String(micro.last).slice(0,7)}`:ctx.irca!=null?'tap-water risk (INS); ≤5 no risk':'no bacteriology in open data'},
+    {cls:mCls||(ctx.irca!=null?(ctx.irca<=5?'ok':ctx.irca<=35?'warn':'bad'):'warn'),l:micro?'E. coli / coliforms':ctx.irca!=null?'IRCA risk index':'E. coli / coliforms',v:micro?(micro.unit==='positive tests'?`${micro.max?'detected':'absent'}`:micro.max>0?`${fmt(micro.max,0)}<small>max /100 mL</small>`:'0<small>/100 mL</small>'):ctx.irca!=null?`${fmt(ctx.irca,1)}<small>/100</small>`:'not sampled',n:micro?`${micro.n} samples · last ${String(micro.last).slice(0,7)}`:ctx.irca!=null?'tap-water risk (INS); ≤5 no risk':'no bacteriology in open data'},
     {cls:util?'ok':'warn',l:'Existing supply',v:util?'utility':'self-supplied',n:util?esc(util):'no registered system found'},
     {cls:covCls,l:'Data coverage',v:`${okN}<small>/ ${totN}</small>`,n:ctx.wwtp?`WWTP nearby${ctx.wwtpName?': '+esc(ctx.wwtpName):''}`:'no treatment plant mapped'},
     (ctx.need?.sub?{cls:ctx.need.sub.Basic>=95?'ok':ctx.need.sub.Basic>=85?'warn':'bad',l:'Water need (region)',v:`${fmt(100-ctx.need.sub.Basic,0)}<small>% lack basic</small>`,n:`${esc(ctx.need.sub.region)} ${ctx.need.sub.year} · rural poorest: ${fmt(100-(ctx.need.sub.country.rural_q1?.Basic??100),0)}% lack basic`}:
@@ -888,10 +981,12 @@ async function scan(lat,lon){
       const h=await adColombia(lat,lon,r,loc);ctx.tds=h.tds??null;ctx.tdsLabel=h.tdsLabel;ctx.utility=h.utility||null;ctx.micro=h.micro||null;ctx.irca=h.irca;
       ctx.wwtp=coverage.some(x=>/Wastewater treatment \(OSM\)/.test(x.topic)&&x.state==='ok');
     }else{
-      const c=card('nat','National monitoring networks','quality');
-      setStatus(c,'no adapter yet','warn');
-      html(c,`<div>No national adapter wired for <b>${esc(loc.addr.country||cc||'this country')}</b> in v0. Global layers above (OSM, NASA POWER, GloFAS) still apply.${cc==='BR'?' Brazil: ANA SNIRH geoservices, SISAGUA, SNIS, SIAGAS wells.':''}${cc==='GB'?' UK: Environment Agency hydrology, groundwater and bathing-water APIs.':''}${cc==='BS'?' Bahamas: WSC and BRGM/USGS reports (PDF ingestion); OSM wells shown above.':''}</div>`);
-      cov('National monitoring networks','none','no adapter for '+(cc||'country'));
+      const AFRICA=new Set('DZ AO BJ BW BF BI CM CV CF TD KM CG CD CI DJ EG GQ ER SZ ET GA GM GH GN GW KE LS LR LY MG MW ML MR MU MA MZ NA NE NG RW ST SN SC SL SO ZA SS SD TZ TG TN UG ZM ZW EH'.split(' '));
+      const wp=await adWPdx(lat,lon,r);
+      if(AFRICA.has(cc)){const ag=await adAfricaGW(lat,lon);if(ag.tds!=null&&ctx.tds==null){ctx.tds=ag.tds;ctx.tdsLabel='Regional groundwater (Africa Groundwater Atlas SEC)';}}
+      adPortals(cc,loc.addr.country);
+      if(!PORTALS[cc]&&!wp){const c=card('nat','National monitoring networks','quality');setStatus(c,'no adapter yet','warn');html(c,`<div>No national adapter or portal listed for <b>${esc(loc.addr.country||cc||'this country')}</b>. Global layers (OSM, NASA POWER, GloFAS, WHYMAP, JMP) still apply.</div>`);cov('National monitoring networks','none','no adapter for '+(cc||'country'));}
+      if(wp&&wp.fcN)ctx.micro={name:'Fecal coliform presence (WPdx)',n:wp.fcN,max:wp.fcPos?1:0,median:null,unit:'positive tests',last:''};
       ctx.wwtp=coverage.some(x=>/Wastewater treatment \(OSM\)/.test(x.topic)&&x.state==='ok');
     }
     adFeedOptions(ctx);
