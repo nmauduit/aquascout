@@ -114,6 +114,8 @@ section.card.loading>.body::before{content:"Fetching from source…";display:blo
 }
 
 .leaflet-control-layers-expanded{position:relative;padding-top:26px;max-height:70vh;overflow:auto}
+.lyr-close,.lyr-title{display:none}
+.leaflet-control-layers-expanded .lyr-close,.leaflet-control-layers-expanded .lyr-title{display:block}
 .lyr-close{position:absolute;top:4px;right:6px;width:20px;height:20px;line-height:18px;text-align:center;border-radius:50%;background:var(--chip);color:var(--fg);font-size:14px;cursor:pointer;border:1px solid var(--line)}
 .lyr-title{position:absolute;top:6px;left:10px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .leaflet-control-layers label{font-size:12.5px;line-height:1.35}
