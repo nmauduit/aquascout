@@ -227,6 +227,10 @@ let marker,circle,layerGroup=L.layerGroup().addTo(map);
 const colors={sea:'#2c5e8a',brackish:'#4f8a8b',fresh:'#2f8f5b',waste:'#7a5a3a'};
 function dot(lat,lon,kind,label){L.circleMarker([lat,lon],{radius:6,color:colors[kind],fillColor:colors[kind],fillOpacity:.8,weight:1}).bindPopup(label).addTo(layerGroup);}
 map.on('click',e=>scan(e.latlng.lat,e.latlng.lng));
+function setHash(lat,lon){const r=+$('#radius').value||10,pp=+$('#pop').value||0;history.replaceState(null,'',`#${lat.toFixed(5)},${lon.toFixed(5)},${r}${pp?','+pp:''}`);}
+function fromHash(){const m=(location.hash||'').slice(1).split(',').map(Number);if(m.length>=2&&!isNaN(m[0])&&!isNaN(m[1])){if(m[2]>0)$('#radius').value=m[2];if(m[3]>0)$('#pop').value=m[3];map.setView([m[0],m[1]],11);scan(m[0],m[1]);return true;}return false;}
+window.addEventListener('load',()=>setTimeout(fromHash,300));
+function briefText(ctx){const t=[...document.querySelectorAll('.brief .kpi > div')].map(d=>d.querySelector('.l').textContent+': '+d.querySelector('.v').textContent.replace(/\s+/g,' ').trim()+' ('+d.querySelector('.n').textContent.trim()+')');const v=document.querySelector('.brief .verdict')?.innerText||'';const h=document.querySelector('.brief .place')?.innerText+' — '+document.querySelector('.brief .sub')?.innerText;return `AquaScout brief\n${h}\n\n${t.join('\n')}\n\n${v}\n\n${location.href}`;}
 $('#go').addEventListener('click',async()=>{const q=$('#q').value.trim();if(!q)return;const m=q.match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);if(m){map.setView([+m[1],+m[2]],11);return scan(+m[1],+m[2]);}try{const r=await getJSON('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+encodeURIComponent(q));if(r[0]){map.setView([+r[0].lat,+r[0].lon],11);scan(+r[0].lat,+r[0].lon);}else alert('Place not found');}catch(e){alert('Geocoder error: '+e.message);}});
 $('#q').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('#go').click();}});
 $('#pop').addEventListener('keydown',e=>{if(e.key==='Enter'&&marker){const p=marker.getLatLng();scan(p.lat,p.lng);}});
@@ -348,7 +352,9 @@ async function adNeed(cc3,cc2,loc){
     html(c,`<div class="tbl"><table><thead><tr><th></th><th class="num">Rural</th><th class="num">Urban</th><th class="num">Total</th></tr></thead><tbody>
       <tr><td>${dotc(d.smdw_ru==null?'':d.smdw_ru>=80?'ok':d.smdw_ru>=50?'warn':'bad')}Safely managed drinking water</td><td class="num">${fmt(d.smdw_ru,0)}%</td><td class="num">${fmt(d.smdw_ur,0)}%</td><td class="num">${fmt(d.smdw,0)}%</td></tr>
       <tr><td>${dotc(d.basw_ru==null?'':d.basw_ru>=90?'ok':d.basw_ru>=70?'warn':'bad')}At least basic drinking water</td><td class="num">${fmt(d.basw_ru,0)}%</td><td class="num">${fmt(d.basw_ur,0)}%</td><td class="num">${fmt(d.basw,0)}%</td></tr>
-      <tr><td>Safely managed sanitation</td><td class="num">—</td><td class="num">—</td><td class="num">${fmt(d.sms,0)}%</td></tr></tbody></table></div>
+      <tr><td>Safely managed sanitation</td><td class="num">—</td><td class="num">—</td><td class="num">${fmt(d.sms,0)}%</td></tr></tbody></table></div>`);
+    try{const who=await loadWHO();const m=who.SDGWSHBOD&&who.SDGWSHBOD[cc3];const w=who.WSH_DOMESTIC_WASTE_SAFELY_TREATED&&who.WSH_DOMESTIC_WASTE_SAFELY_TREATED[cc3];if(m||w)html(c,`<div><b>WHO:</b> ${m?`${dotc(m.v<5?'ok':m.v<25?'warn':'bad')}${fmt(m.v,1)} deaths per 100,000 attributable to unsafe water, sanitation and hygiene (SDG 3.9.2, ${m.y})`:''}${m&&w?' · ':''}${w?`${fmt(w.v,0)}% of domestic wastewater safely treated (${w.y})`:''}</div>`);}catch(e){}
+    html(c,`
       <div class="hint">${esc(d.name)}, JMP ${esc(d.smdw_y||d.basw_y||'')}. National figures; rural gaps inside a country can be far larger (e.g. La Guajira vs Bogotá). Subnational JMP estimates are a to-do. Turn on the "Water need" map layer to compare countries.</div>`);
     let sub=null;try{const sd=await loadSub();const st=loc.addr&&(loc.addr.state||loc.addr.region||loc.addr.province);sub=st?subLookup(sd,cc3,st):null;
       if(sub){html(c,`<div style="margin-top:6px"><b>Subnational — ${esc(st)}</b> (JMP region “${esc(sub.region)}”, survey ${sub.year}): at least basic water <b>${fmt(sub.Basic,0)}%</b>${dotc(sub.Basic>=95?'ok':sub.Basic>=85?'warn':'bad')} · unimproved ${fmt(sub.Unimproved,0)}% · surface water ${fmt(sub['Surface water'],0)}% — all population.<br>National rural, poorest quintile: basic <b>${fmt(sub.country.rural_q1?.Basic,0)}%</b>, surface water <b>${fmt(sub.country.rural_q1?.['Surface water'],0)}%</b> — the population a community plant targets.</div>`);cov('Water access — subnational (JMP)','ok',`${st}: basic ${fmt(sub.Basic,0)}%`);}
@@ -538,12 +544,14 @@ function adDemand(places,wp){
   const manual=+$('#pop').value||0;
   const near=places.filter(p=>p.pop>0).slice(0,5);
   const small=near.find(p=>p.pop<=20000);
-  const pick=(near[0]&&near[0].d<=3)?near[0]:(small||near[0]);
-  const assumed=!manual&&!pick&&!wp;
-  const pop=manual||(pick&&(pick===small||pick.pop<=20000)?pick.pop:wp?wp.pop:pick?pick.pop:500);
+  let pick=(near[0]&&near[0].d<=3)?near[0]:(small||near[0]);
+  const muniFig=pick&&pick.pop>50000&&!/city/.test(pick.place||'');
+  const assumed=!manual&&(!pick||muniFig)&&!wp;
+  const pop=manual||(pick&&!muniFig&&(pick===small||pick.pop<=20000)?pick.pop:wp?wp.pop:(pick&&!muniFig)?pick.pop:(muniFig?2000:500));
   const lpcd=100;
   const Q=pop*lpcd*1.15/1000;
-  setStatus(c,assumed?'assumed 500 — enter population':`${fmt(pop,0)} people`,assumed?'warn':'ok');
+  setStatus(c,assumed?(muniFig?'assumed 2,000 — OSM figure is the whole municipality':'assumed 500 — enter population'):`${fmt(pop,0)} people`,assumed?'warn':'ok');
+  if(muniFig)html(c,`<div class="hint">OSM tags <b>${esc(pick.name)}</b> (${esc(pick.place)}) with ${fmt(pick.pop,0)} people — that is the municipality, not the settlement; demand assumes 2,000 until you enter the community size.</div>`);
   if(wp)html(c,`<div><b>WorldPop 2020:</b> ${fmt(wp.pop,0)} people within the ${wp.R} km box${manual||(pick&&(pick===small||pick.pop<=20000))?' (for reference)':' — used as demand basis'}</div>`);
   html(c,`<dl class="kv"><dt>Population used</dt><dd><b>${fmt(pop,0)}</b> ${assumed?'<span class="pill warn">assumed</span> no OSM population tag nearby — enter the community size above and press Enter':manual?'(entered)':pick?((pick===small||pick.pop<=20000)?`(nearest OSM ${esc(pick.place)}: ${esc(pick.name)}, ${fmt(pick.d,1)} km)`:`(nearest place is the city of ${esc(pick.name)}, ${fmt(pick.d,1)} km — for a community-scale plant enter its population above)`):''}</dd><dt>Demand basis</dt><dd>${lpcd} L/person/day + 15% losses</dd><dt>Average demand</dt><dd><b>${fmt(Q,1)}</b> m³/day · design ${fmt(Q*1.3,0)} m³/day (peak ×1.3)</dd></dl>`);
   if(near.length>1)html(c,`<div class="hint">Other places with population: ${near.filter(p=>p!==pick).map(p=>`${esc(p.name)} ${fmt(p.pop,0)} (${fmt(p.d,0)} km)`).join('; ')}</div>`);
@@ -1100,7 +1108,17 @@ async function adEconomics(ctx){
     out.innerHTML=table(rows,[{h:'Option',f:x=>(x===win?'<b>★ ':'')+esc(x.name)+(x===win?'</b>':'')},{h:'Capex $',num:1,f:x=>fmt(x.capex,0)},{h:'$/year',num:1,f:x=>fmt(x.annual,0)},{h:'$/kWh',num:1,f:x=>fmt(x.lcoe,3)},{h:'$/m³ energy',num:1,f:x=>fmt(x.perM3,2)},{h:`NPV ${p.life} yr $`,num:1,f:x=>fmt(x.npv,0)}])
       +`<div><b>Verdict:</b> ${esc(win.name)} is cheapest over ${p.life} years at ${fmt(win.lcoe,3)} $/kWh (${fmt(win.perM3,2)} $/m³ of energy). ${r.breakeven<=0?'Solar off-grid beats the grid at any tariff here (the line extension alone costs more than the solar system).':`Solar off-grid beats the grid when the tariff is above <b>${fmt(r.breakeven,3)} $/kWh</b>${p.tariff>=r.breakeven?' — it is.':` — current ${fmt(p.tariff,3)}.`}`} ${p.cls==='zni'?'In a ZNI the "grid" is diesel a few hours a day, so solar also buys 24 h supply.':''}${p.rel&&p.rel!=='fair'?' Grid cost includes a genset and fuel for outages.':''}</div>
       <div class="hint">First-order model: CRF ${fmt(r.crf,3)}; backup fuel share ${fmt(p.backupShare*100,0)} % for off-grid (set by worst-month sun); grid-tied PV covers 65 % of energy; battery replaced at year 10; genset fuel 0.35 L/kWh. Excludes RO plant capex, water storage, membranes and labour, which are the same in every option. Edit any input and the table recomputes.</div>`;
-    ctx.econ={win:win.name,breakeven:r.breakeven,tariff:p.tariff,solar:r.solar,grid:r.grid,hybrid:r.hybrid};};
+    // full water cost: energy (winner) + RO plant capex + consumables + labour
+    const Q=p.Q||0;const tds=best.tds||35000;const sw=tds>=10000;
+    const unit=sw?(Q<100?4500:Q<500?3500:Q<2000?2800:2200):(Q<100?2500:Q<500?1900:Q<2000?1500:1200); // $ per m³/d installed, RO + intake + storage
+    const capRO=Q*unit;const cons=sw?0.30:0.18; // $/m³ membranes, chemicals, cartridges
+    const labour=Q<100?12000:Q<500?24000:Q<2000?45000:90000; // $/yr operator(s)
+    const roOM=capRO*0.025;const Qyr=Q*365*0.9;
+    const lcow=o=>(capRO*r.crf+roOM+labour)/Qyr+cons+(o.perM3||0);
+    const lrows=[r.solar,r.hybrid,r.grid].map(o=>({name:o.name,energy:o.perM3,water:lcow(o)})).sort((a,b)=>a.water-b.water);
+    const truck=island?12:6,bottle=250; // $/m³ reference: trucked water, bottled 20 L jugs (~$5)
+    out.innerHTML+=`<div style="margin-top:8px"><b>Full water cost (LCOW)</b> — RO plant ${fmt(unit,0)} $ per m³/d (${sw?'seawater':'brackish'} class, ${fmt(capRO,0)} $ capex), consumables ${fmt(cons,2)} $/m³, operator ${fmt(labour,0)} $/yr, 90 % availability, same CRF.</div>`+table(lrows,[{h:'Powered by',f:x=>esc(x.name)},{h:'Energy $/m³',num:1,f:x=>fmt(x.energy,2)},{h:'Water $/m³',num:1,f:x=>'<b>'+fmt(x.water,2)+'</b>'}])+`<div class="hint">Benchmarks: trucked water ~${truck} $/m³ (${island?'island':'mainland'}), bottled/jug water ~${bottle} $/m³, utility tariffs 0.5–3 $/m³. A ${fmt(lrows[0].water,2)} $/m³ solar-RO price undercuts trucking ${lrows[0].water<truck?'by '+fmt(truck/lrows[0].water,1)+'×':'— no'}. Excludes land, permits, distribution network, brine disposal and financing margin.</div>`;
+    ctx.econ={win:win.name,breakeven:r.breakeven,tariff:p.tariff,solar:r.solar,grid:r.grid,hybrid:r.hybrid,lcow:lrows[0].water,truck};};
   wrap.addEventListener('input',run);run();
   setStatus(c,`${esc(ctx.econ.win)} · breakeven ${fmt(ctx.econ.breakeven,2)} $/kWh`,ctx.econ.win.startsWith('Solar')?'ok':'');
 }
@@ -1153,7 +1171,7 @@ function renderBrief(ctx){
   const covCls=okN/Math.max(1,totN)>=0.7?'ok':okN/Math.max(1,totN)>=0.4?'warn':'bad';
   const tiles=[
     {cls:solCls,l:'Sun · worst month',v:sol?`${fmt(sol.worst,1)}<small>kWh/m²/d</small>`:'—',n:sol?`${fmt(sol.ann,1)} annual · ${fmt(sol.annRain,0)} mm rain`:'no solar data'},
-    {cls:ctx.assumed?'warn':'info',l:'Demand',v:dem,n:ctx.assumed?'assumed 500 people — enter real size':`${fmt(ctx.pop,0)} people × 100 L`},
+    {cls:ctx.assumed?'warn':'info',l:'Demand',v:dem,n:ctx.assumed?`assumed ${fmt(ctx.pop,0)} people — enter real size`:`${fmt(ctx.pop,0)} people × 100 L`},
     {cls:bestCls,l:'Best feed water',v:best?esc(best.cl?best.cl.c:'?'):'none found',n:best?`${fmt(best.tds,0)} mg/L · ${fmt(best.sec,1)} kWh/m³`:'no source with known salinity'},
     {cls:mCls||(ctx.irca!=null?(ctx.irca<=5?'ok':ctx.irca<=35?'warn':'bad'):'warn'),l:micro?'E. coli / coliforms':ctx.irca!=null?'IRCA risk index':'E. coli / coliforms',v:micro?(micro.unit==='positive tests'?`${micro.max?'detected':'absent'}`:micro.max>0?`${fmt(micro.max,0)}<small>max /100 mL</small>`:'0<small>/100 mL</small>'):ctx.irca!=null?`${fmt(ctx.irca,1)}<small>/100</small>`:'not sampled',n:micro?`${micro.n} samples · last ${String(micro.last).slice(0,7)}`:ctx.irca!=null?'tap-water risk (INS); ≤5 no risk':'no bacteriology in open data'},
     {cls:util?'ok':'warn',l:'Existing supply',v:util?'utility':'self-supplied',n:util?esc(util):'no registered system found'},
@@ -1170,10 +1188,13 @@ function renderBrief(ctx){
   if(ctx.need?.gapRu!=null&&ctx.need.gapRu>=20)verdict.push(`Nationally, ${fmt(ctx.need.gapRu,0)}% of the rural population lacks safely managed water (JMP), which supports prioritising this region.`);
   if(ctx.ds?.nearest)verdict.push(`An existing desalination plant (${esc(ctx.ds.nearest.name)}) operates ${fmt(ctx.ds.nearest.d,0)} km away — a reference for feed water, permits and operators.`);
   if(ctx.grid){const gd=ctx.grid;if(gd.cls==='zni')verdict.push(`The locality is in Colombia's non-interconnected zone with about ${fmt(gd.zni?.hMed,0)} h/day of generator service, so a solar-battery plant is the realistic design and can share the existing genset.`);else if(gd.cls==='unmapped')verdict.push(`No grid line is mapped in OpenStreetMap here, although the country is ${fmt(gd.wb['EG.ELC.ACCS.ZS'].v,0)} % electrified — confirm the nearest line before choosing between hybrid and off-grid.`);else if(gd.cls==='none'||gd.cls==='far')verdict.push(`No grid line is mapped within reach (${esc(gd.label)}), so plan fully off-grid.`);else if(gd.cls==='near'&&gd.rel==='poor')verdict.push(`The grid is close (${fmt(gd.dLine,1)} km) but nationally unreliable (${esc(gd.rel)}), so keep storage and a standby set.`);else if(gd.cls==='near')verdict.push(`A ${gd.kv?fmt(gd.kv,0)+' kV ':''}line passes ${fmt(gd.dLine,1)} km away${gd.util?' ('+esc(gd.util.name)+')':''}, so a grid-tied PV plant without battery is an option.`);}
-  if(ctx.econ)verdict.push(`Energy economics: <b>${esc(ctx.econ.win)}</b> is the cheapest way to power the plant over 20 years; solar off-grid wins above a tariff of ${fmt(ctx.econ.breakeven,2)} $/kWh (local ${fmt(ctx.econ.tariff,2)}).`);
+  if(ctx.econ)verdict.push(`Energy economics: <b>${esc(ctx.econ.win)}</b> is the cheapest way to power the plant over 20 years; solar off-grid wins above a tariff of ${fmt(ctx.econ.breakeven,2)} $/kWh (local ${fmt(ctx.econ.tariff,2)}). Full water cost about <b>${fmt(ctx.econ.lcow,2)} $/m³</b>${ctx.econ.lcow<ctx.econ.truck?`, versus ~${ctx.econ.truck} $/m³ for trucked water`:''}.`);
   if(sol&&sol.worst<3)verdict.push(`Winter sun is weak (${fmt(sol.worst,1)} kWh/m²/d); expect a large array or seasonal generator use.`);
-  b.innerHTML=`<div><div class="place">${esc(name)}</div><div class="sub">${esc(region)} · ${ctx.lat.toFixed(4)}, ${ctx.lon.toFixed(4)} · ${ctx.r} km radius</div></div><div class="kpi">${tiles.map(t=>`<div class="${t.cls}"><span class="l">${t.l}</span><span class="v">${t.v}</span><span class="n" title="${t.n.replace(/<[^>]+>/g,'')}">${t.n}</span></div>`).join('')}</div><div class="verdict">${verdict.join(' ')}</div>`;
+  b.innerHTML=`<div><div class="place">${esc(name)}</div><div class="sub">${esc(region)} · ${ctx.lat.toFixed(4)}, ${ctx.lon.toFixed(4)} · ${ctx.r} km radius · <a href="#" class="copybrief">copy brief</a> · <a href="#" class="copylink">copy link</a></div></div><div class="kpi">${tiles.map(t=>`<div class="${t.cls}"><span class="l">${t.l}</span><span class="v">${t.v}</span><span class="n" title="${t.n.replace(/<[^>]+>/g,'')}">${t.n}</span></div>`).join('')}</div><div class="verdict">${verdict.join(' ')}</div>`;
   g.insertBefore(b,g.querySelector('h3').nextSibling);
+  const cp=async(txt,el)=>{try{await navigator.clipboard.writeText(txt);el.textContent='copied ✓';setTimeout(()=>el.textContent=el.dataset.l,1500);}catch(e){prompt('Copy:',txt);}};
+  b.querySelector('.copybrief').addEventListener('click',e=>{e.preventDefault();e.target.dataset.l='copy brief';cp(briefText(ctx),e.target);});
+  b.querySelector('.copylink').addEventListener('click',e=>{e.preventDefault();e.target.dataset.l='copy link';cp(location.href,e.target);});
 }
 async function runNational(cc,lat,lon,r,loc){
   const n={};
@@ -1207,7 +1228,7 @@ async function runNational(cc,lat,lon,r,loc){
 let running=false;
 async function scan(lat,lon){
   if(running)return;running=true;
-  const r=Math.min(50,Math.max(1,+$('#radius').value||10));
+  const r=Math.min(50,Math.max(1,+$('#radius').value||10));setHash(lat,lon);
   layerGroup.clearLayers();if(marker)map.removeLayer(marker);if(circle)map.removeLayer(circle);
   marker=L.marker([lat,lon]).addTo(map);circle=L.circle([lat,lon],{radius:r*1000,color:'#0f6f86',weight:1,fillOpacity:.04}).addTo(map);
   scaffold();coverage=[];
