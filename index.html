@@ -82,6 +82,21 @@ ul.plain{margin:0;padding-left:18px}
 }
 
 .pname{white-space:nowrap}td:last-child,td .tag{white-space:nowrap}.tag{font-family:var(--mono);font-size:10px;color:var(--muted);margin-left:4px}.range{color:var(--muted)}
+
+.status{border:1px solid var(--line);border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:4px;background:var(--panel)}
+.status .hd{display:flex;justify-content:space-between;align-items:center;font-size:12.5px;font-weight:600}
+.status .hd .t{font-family:var(--mono);font-weight:400;color:var(--muted);font-size:11px}
+.status ul{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:1fr 1fr;gap:2px 10px;font-size:11.5px}
+.status li{display:flex;align-items:center;gap:6px;color:var(--muted);min-width:0}
+.status li span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.status li i{width:8px;height:8px;border-radius:50%;background:var(--line);flex:none}
+.status li.run{color:var(--fg)} .status li.run i{background:var(--accent);animation:pulse 1.2s infinite}
+.status li.done i{background:var(--good)} .status li.err{color:var(--bad)} .status li.err i{background:var(--bad)}
+.status li .ms{font-family:var(--mono);font-size:10px;margin-left:auto;color:var(--muted)}
+.status.complete{border-color:var(--good)} .status.complete .hd{color:var(--good)}
+section.card.loading{opacity:.55}
+section.card.loading>.body::before{content:"Fetching from source…";display:block;font-family:var(--mono);font-size:11px;color:var(--accent)}
+@media (max-width:480px){.status ul{grid-template-columns:1fr}}
 /* dossier structure */
 .grp{display:flex;flex-direction:column;gap:8px}
 .grp>h3{margin:14px 0 0;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600;display:flex;align-items:center;gap:8px}
@@ -169,10 +184,13 @@ const dossier=$('#dossier');
 const cards={};
 const GROUPS=[['site','Site'],['sources','Water sources & quantity'],['quality','Water quality'],['system','Existing water system'],['energy','Solar & plant sizing'],['coverage','Data coverage']];
 const groupEl={};let progressEl=null,progressItems={};
-function scaffold(){dossier.innerHTML='';progressEl=document.createElement('div');progressEl.className='progress';dossier.appendChild(progressEl);progressItems={};for(const [id,label] of GROUPS){const g=document.createElement('div');g.className='grp';g.id='g-'+id;g.hidden=true;g.innerHTML=`<h3>${esc(label)}</h3>`;dossier.appendChild(g);groupEl[id]=g;}}
-function progress(id,state){if(!progressEl)return;let it=progressItems[id];if(!it){it=document.createElement('i');it.title=id;progressEl.appendChild(it);progressItems[id]=it;}it.className=state;const n=Object.values(progressItems),d=n.filter(x=>x.className!=='run').length;let t=progressEl.querySelector('span');if(!t){t=document.createElement('span');progressEl.prepend(t);}t.textContent=d<n.length?`scanning ${d}/${n.length} sources`:`${n.length} sources queried`;}
-function card(id,title,group='sources',opts={}){const g=groupEl[group]||dossier;if(g.hidden!==undefined)g.hidden=false;const s=document.createElement('section');s.className='card'+(opts.closed?' closed':'');s.id='c-'+id;s.innerHTML=`<h2><span>${esc(title)}</span><span class="st busy">querying…</span></h2><div class="body"></div>`;s.querySelector('h2').addEventListener('click',()=>s.classList.toggle('closed'));g.appendChild(s);progress(id,'run');cards[id]={el:s,body:s.querySelector('.body'),st:s.querySelector('.st'),id};return cards[id];}
-function setStatus(c,txt,cls){c.st.textContent=txt;c.st.className='st '+(cls||'');progress(c.id,cls==='bad'?'err':'done');}
+const SRC_LABELS={loc:'Place & elevation (OSM, Open-Meteo)',solar:'Solar & rain (NASA POWER)',osm:'Water bodies & infrastructure (OpenStreetMap)',flow:'River discharge (GloFAS)',demand:'Community & demand',usgs:'USGS gauges & wells',wqp:'Water Quality Portal (chemistry, E. coli)',util:'EPA water utility',echo:'EPA ECHO wastewater',hubeau:"Hub'Eau (eau potable, nappes, rivières)",'co-irca':'INS SIVICAP (IRCA)','co-q':'IDEAM water quality','co-st':'IDEAM stations','co-sui':'Superservicios RUPS',nat:'National network',feed:'Feed-water sizing',cov:'Coverage report'};
+let scanT0=0,scanTimer=null;
+function scaffold(){dossier.innerHTML='';progressEl=document.createElement('div');progressEl.className='status';progressEl.innerHTML='<div class="hd"><span>Scanning…</span><span class="t">0 s</span></div><ul></ul>';dossier.appendChild(progressEl);progressItems={};scanT0=Date.now();clearInterval(scanTimer);scanTimer=setInterval(()=>{const t=progressEl.querySelector('.hd .t');if(t&&!progressEl.classList.contains('complete'))t.textContent=Math.round((Date.now()-scanT0)/1000)+' s';},1000);for(const [id,label] of GROUPS){const g=document.createElement('div');g.className='grp';g.id='g-'+id;g.hidden=true;g.innerHTML=`<h3>${esc(label)}</h3>`;dossier.appendChild(g);groupEl[id]=g;}}
+function progress(id,state){if(!progressEl)return;let it=progressItems[id];if(!it){it=document.createElement('li');it.innerHTML=`<i></i><span>${esc(SRC_LABELS[id]||id)}</span><em class="ms"></em>`;it.dataset.t0=Date.now();progressEl.querySelector('ul').appendChild(it);progressItems[id]=it;}it.className=state;if(state!=='run')it.querySelector('.ms').textContent=((Date.now()-(+it.dataset.t0))/1000).toFixed(1)+' s';const n=Object.values(progressItems),d=n.filter(x=>x.className!=='run').length,bad=n.filter(x=>x.className==='err').length;progressEl.querySelector('.hd span').textContent=d<n.length?`Fetching ${d}/${n.length} sources…`:`Scan complete — ${n.length} sources${bad?`, ${bad} failed`:''}`;}
+function scanDone(){if(!progressEl)return;progressEl.classList.add('complete');clearInterval(scanTimer);const t=progressEl.querySelector('.hd .t');if(t)t.textContent='done in '+Math.round((Date.now()-scanT0)/1000)+' s';}
+function card(id,title,group='sources',opts={}){const g=groupEl[group]||dossier;if(g.hidden!==undefined)g.hidden=false;const s=document.createElement('section');s.className='card loading'+(opts.closed?' closed':'');s.id='c-'+id;s.innerHTML=`<h2><span>${esc(title)}</span><span class="st busy">querying…</span></h2><div class="body"></div>`;s.querySelector('h2').addEventListener('click',()=>s.classList.toggle('closed'));g.appendChild(s);progress(id,'run');cards[id]={el:s,body:s.querySelector('.body'),st:s.querySelector('.st'),id};return cards[id];}
+function setStatus(c,txt,cls){c.st.textContent=txt;c.st.className='st '+(cls||'');c.el.classList.remove('loading');progress(c.id,cls==='bad'?'err':'done');}
 function src(c,label,url){const p=document.createElement('div');p.className='src';p.innerHTML=url?`Source: <a href="${esc(url)}" target="_blank" rel="noopener">${esc(label)}</a>`:'Source: '+esc(label);c.body.appendChild(p);}
 function html(c,h){const d=document.createElement('div');d.innerHTML=h;c.body.appendChild(d);}
 function fail(c,e,label){setStatus(c,'error','bad');c.el.classList.remove('closed');html(c,`<div class="err">${esc(label||'')} ${esc(e.message||e)}</div>`);}
@@ -666,8 +684,9 @@ async function scan(lat,lon){
     adFeedOptions(ctx);
     adCoverage();
     renderBrief(ctx);
+    scanDone();
     dossier.scrollTop=0;
-  }catch(e){const d=document.createElement('div');d.className='err';d.textContent='Scan failed: '+e.message;dossier.appendChild(d);}
+  }catch(e){const d=document.createElement('div');d.className='err';d.textContent='Scan failed: '+e.message;dossier.appendChild(d);scanDone();}
   running=false;
 }
 </script>
