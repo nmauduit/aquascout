@@ -447,7 +447,7 @@ async function adRiverFlow(lat,lon){
 async function adOSM(lat,lon,r){
   const c=card('osm','Mapped water bodies & infrastructure','sources',{closed:true});
   const rm=r*1000;
-  const q=`[out:json][timeout:90];(
+  const q=`[out:json][timeout:60];(
     nwr(around:${rm},${lat},${lon})["natural"="water"];
     nwr(around:${rm},${lat},${lon})["waterway"~"^(river|stream|canal)$"];
     nwr(around:${rm},${lat},${lon})["natural"="coastline"];
@@ -459,7 +459,7 @@ async function adOSM(lat,lon,r){
   try{
     const mirrors=['https://overpass-api.de/api/interpreter','https://overpass.kumi.systems/api/interpreter','https://lz4.overpass-api.de/api/interpreter'];
     let r2=null,lastErr=null;
-    for(const m of mirrors){try{r2=await getJSON(m+'?data='+encodeURIComponent(q),{timeout:100000});break;}catch(e){lastErr=e;html(c,`<div class="hint">${esc(m.replace('https://','').split('/')[0])}: ${esc(e.message)} — trying next mirror</div>`);}}
+    for(const m of mirrors){try{r2=await getJSON(m+'?data='+encodeURIComponent(q),{timeout:70000});break;}catch(e){lastErr=e;html(c,`<div class="hint">${esc(m.replace('https://','').split('/')[0])}: ${esc(e.message)} — trying next mirror</div>`);}}
     if(!r2)throw lastErr||new Error('all Overpass mirrors failed');
     const el=r2.elements||[];const cnt={};const feats=[];let coast=false;const places=[];
     for(const e of el){const t=e.tags||{};const la=e.lat??e.center?.lat,lo=e.lon??e.center?.lon;
@@ -951,8 +951,8 @@ async function adGrid(lat,lon,r,cc,loc){
   const tasks=[];
   // 1. OpenStreetMap power infrastructure (global)
   tasks.push((async()=>{
-    const q=`[out:json][timeout:90];(way(around:${R},${lat},${lon})["power"~"^(line|minor_line|cable)$"];nwr(around:${R},${lat},${lon})["power"~"^(substation|plant)$"];node(around:${R},${lat},${lon})["power"="generator"]["generator:source"]["generator:output:electricity"];);out tags geom 500;`;
-    const r2=await overpass(q,80000);
+    const q=`[out:json][timeout:60];(way(around:${R},${lat},${lon})["power"~"^(line|minor_line|cable)$"];nwr(around:${R},${lat},${lon})["power"~"^(substation|plant)$"];node(around:${R},${lat},${lon})["power"="generator"]["generator:source"]["generator:output:electricity"];);out tags geom 500;`;
+    const r2=await overpass(q,65000);
     for(const e of r2.elements||[]){const t=e.tags||{};
       if(/^(line|minor_line|cable)$/.test(t.power)&&e.geometry){const co=e.geometry.map(p=>[p.lat,p.lon]);const kv=voltKV(t.voltage);const d=distToPath([lat,lon],co);g.lines.push({kv,d,co,name:t.name||'',op:t.operator||'',kind:t.power});}
       else if(t.power==='substation'){const la=e.lat??e.center?.lat??(e.geometry&&e.geometry[0]?.lat),lo=e.lon??e.center?.lon??(e.geometry&&e.geometry[0]?.lon);if(la==null)continue;g.subs.push({name:t.name||'Substation',kv:voltKV(t.voltage),op:t.operator||'',d:km([lat,lon],[la,lo]),la,lo,sub:t.substation||''});}
@@ -1042,7 +1042,7 @@ function econCompute(p){
   for(const k in out){const o=out[k];o.lcoe=(o.npv*crf)/Eyr;o.perM3=p.Q?o.lcoe*p.E/p.Q:null;}
   // breakeven tariff: grid NPV == solar NPV
   const gridNonEnergy=npv(capG,Eyr*outage*fuelKwh+capG*0.01,0);const pvFactor=(()=>{let f=0;for(let y=1;y<=p.life;y++)f+=1/Math.pow(1+p.disc,y);return f;})();
-  out.breakeven=(out.solar.npv-gridNonEnergy)/(Eyr*(1-outage)*pvFactor);
+  out.breakeven=Math.max(0,(out.solar.npv-gridNonEnergy)/(Eyr*(1-outage)*pvFactor));
   out.crf=crf;return out;}
 async function adEconomics(ctx){
   const c=card('econ','Energy cost — grid vs solar vs hybrid','energy');
@@ -1053,12 +1053,12 @@ async function adEconomics(ctx){
   const ids=['tariff','pvCost','battCost','genCost','diesel','lineKm','lineCost','conn','disc','life','om'];
   const labels={tariff:'Grid tariff $/kWh',pvCost:'PV installed $/kWp',battCost:'Battery $/kWh',genCost:'Genset $/kVA',diesel:'Diesel $/L',lineKm:'Line extension km',lineCost:'Line cost $/km',conn:'Connection/transformer $',disc:'Discount rate',life:'Life years',om:'O&M %/yr of capex'};
   const wrap=document.createElement('div');wrap.className='econ';
-  wrap.innerHTML=`<div class="hint">Energy to produce <b>${fmt(best.E,0)} kWh/day</b> for ${fmt(ctx.Q,0)} m³/d (${esc(best.src)}, ${fmt(best.sec,1)} kWh/m³). Tariff source: ${esc(tf.src)}${tf.url?` <a href="${esc(tf.url)}" target="_blank" rel="noopener">↗</a>`:''}${tf.note?` — ${esc(tf.note)}`:''}. Grid: ${esc(gd.label||'unknown')}${gd.rel?`, reliability ${esc(gd.rel)}`:''}.</div><div class="econ-in">${ids.map(k=>`<label class="small">${labels[k]}<input type="number" step="any" data-k="${k}" value="${defaults[k]}"></label>`).join('')}</div><div class="econ-out"></div>`;
+  wrap.innerHTML=`<div class="hint">Energy to produce <b>${fmt(best.E,0)} kWh/day</b> for ${fmt(ctx.Q,0)} m³/d (${esc(best.src)}, ${fmt(best.sec,1)} kWh/m³). Tariff source: ${esc(tf.src)}${tf.url?` <a href="${esc(tf.url)}" target="_blank" rel="noopener">↗</a>`:''}${tf.note?` — ${esc(tf.note)}`:''}. Grid: ${esc(gd.label||'lookup still running — table will refresh')}${gd.rel?`, reliability ${esc(gd.rel)}`:''}.</div><div class="econ-in">${ids.map(k=>`<label class="small">${labels[k]}<input type="number" step="any" data-k="${k}" value="${defaults[k]}"></label>`).join('')}</div><div class="econ-out"></div>`;
   c.body.appendChild(wrap);const out=wrap.querySelector('.econ-out');
   const run=()=>{const p={...defaults};wrap.querySelectorAll('input[data-k]').forEach(i=>{const v=parseFloat(i.value);if(!isNaN(v))p[i.dataset.k]=v;});const r=econCompute(p);
     const rows=[r.solar,r.hybrid,r.grid].sort((a,b)=>a.npv-b.npv);const win=rows[0];
     out.innerHTML=table(rows,[{h:'Option',f:x=>(x===win?'<b>★ ':'')+esc(x.name)+(x===win?'</b>':'')},{h:'Capex $',num:1,f:x=>fmt(x.capex,0)},{h:'$/year',num:1,f:x=>fmt(x.annual,0)},{h:'$/kWh',num:1,f:x=>fmt(x.lcoe,3)},{h:'$/m³ energy',num:1,f:x=>fmt(x.perM3,2)},{h:`NPV ${p.life} yr $`,num:1,f:x=>fmt(x.npv,0)}])
-      +`<div><b>Verdict:</b> ${esc(win.name)} is cheapest over ${p.life} years at ${fmt(win.lcoe,3)} $/kWh (${fmt(win.perM3,2)} $/m³ of energy). Solar off-grid beats the grid when the tariff is above <b>${fmt(r.breakeven,3)} $/kWh</b>${p.tariff>=r.breakeven?' — it is.':` — current ${fmt(p.tariff,3)}.`} ${p.cls==='zni'?'In a ZNI the "grid" is diesel a few hours a day, so solar also buys 24 h supply.':''}${p.rel&&p.rel!=='fair'?' Grid cost includes a genset and fuel for outages.':''}</div>
+      +`<div><b>Verdict:</b> ${esc(win.name)} is cheapest over ${p.life} years at ${fmt(win.lcoe,3)} $/kWh (${fmt(win.perM3,2)} $/m³ of energy). ${r.breakeven<=0?'Solar off-grid beats the grid at any tariff here (the line extension alone costs more than the solar system).':`Solar off-grid beats the grid when the tariff is above <b>${fmt(r.breakeven,3)} $/kWh</b>${p.tariff>=r.breakeven?' — it is.':` — current ${fmt(p.tariff,3)}.`}`} ${p.cls==='zni'?'In a ZNI the "grid" is diesel a few hours a day, so solar also buys 24 h supply.':''}${p.rel&&p.rel!=='fair'?' Grid cost includes a genset and fuel for outages.':''}</div>
       <div class="hint">First-order model: CRF ${fmt(r.crf,3)}; backup fuel share ${fmt(p.backupShare*100,0)} % for off-grid (set by worst-month sun); grid-tied PV covers 65 % of energy; battery replaced at year 10; genset fuel 0.35 L/kWh. Excludes RO plant capex, water storage, membranes and labour, which are the same in every option. Edit any input and the table recomputes.</div>`;
     ctx.econ={win:win.name,breakeven:r.breakeven,tariff:p.tariff,solar:r.solar,grid:r.grid,hybrid:r.hybrid};};
   wrap.addEventListener('input',run);run();
