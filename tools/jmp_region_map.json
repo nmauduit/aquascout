@@ -1,0 +1,10 @@
+{
+  "COL": {
+    "Atlantica": ["La Guajira","Cesar","Magdalena","Atlántico","Bolívar","Sucre","Córdoba","San Andrés y Providencia"],
+    "Bogota": ["Bogota"],
+    "Central": ["Antioquia","Caldas","Risaralda","Quindío","Tolima","Huila","Caquetá"],
+    "Oriental": ["Norte de Santander","Santander","Boyacá","Cundinamarca","Meta"],
+    "Orinoquia/Amazonia": ["Arauca","Casanare","Vichada","Guainía","Guaviare","Vaupés","Amazonas","Putumayo"],
+    "Pacifica": ["Chocó","Valle del Cauca","Cauca","Nariño"]
+  }
+}

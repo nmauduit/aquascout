@@ -135,7 +135,7 @@ section.card.closed>.body{display:none}
 <div id="app">
   <div id="mapwrap">
     <div id="map"></div>
-    <div class="needlegend" id="needlegend"><b>Rural population without safely managed water</b><div class="bar"><i style="background:#f1f6f8"></i><i style="background:#c6dbe9"></i><i style="background:#8fb3d6"></i><i style="background:#5b86b8"></i><i style="background:#2f5a94"></i><i style="background:#1a3566"></i></div><div class="lbl"><span>&lt;10%</span><span>&gt;80%</span></div><div class="hint" style="font-size:10px">WHO/UNICEF JMP via World Bank; grey = no estimate</div></div>
+    <div class="needlegend" id="needlegend"><b>Share of population lacking safe water</b><div class="bar"><i style="background:#f1f6f8"></i><i style="background:#c6dbe9"></i><i style="background:#8fb3d6"></i><i style="background:#5b86b8"></i><i style="background:#2f5a94"></i><i style="background:#1a3566"></i></div><div class="lbl"><span>&lt;10%</span><span>&gt;80%</span></div><div class="hint" style="font-size:10px">Country layer: rural without safely managed (JMP via World Bank). Regional layer: without at least basic (JMP inequalities). Grey = no estimate</div></div>
     <div class="legend">
       <div><i style="background:var(--sea)"></i>Monitoring / gauges</div>
       <div><i style="background:var(--brackish)"></i>Wells, springs, intakes</div>
@@ -219,6 +219,23 @@ needGroup.on('add',async()=>{
 });
 needGroup.on('remove',()=>{$('#needlegend').style.display='none';});
 
+
+// ---------- Subnational water need (JMP inequalities files, converted by tools/jmp_inequalities_to_json.py) ----------
+let subData=null,admin1Geo=null,subLayer=null;
+const subGroup=L.layerGroup();
+async function loadSub(){if(!subData){try{subData=await getJSON('data/jmp-subnational.json');}catch(e){subData={};}}return subData;}
+async function loadAdmin1(){if(!admin1Geo)admin1Geo=await getJSON('data/admin1.geojson',{timeout:60000});return admin1Geo;}
+const normN=t=>String(t||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');
+function subLookup(sub,a3,admName){const c=sub[a3];if(!c)return null;const n=normN(admName);for(const [reg,v] of Object.entries(c.regions)){if((v.admin1||[]).some(x=>normN(x)===n)||normN(reg)===n)return {region:reg,...v,year:c.year,country:c};}return null;}
+const subColor=basic=>basic==null?'#9aa5ad':needColor(basic);
+subGroup.on('add',async()=>{$('#needlegend').style.display='flex';if(subLayer)return;try{const [geo,sub]=await Promise.all([loadAdmin1(),loadSub()]);
+  const feats=geo.features.filter(f=>sub[f.properties.a3]);
+  subLayer=L.geoJSON({type:'FeatureCollection',features:feats},{style:f=>{const m=subLookup(sub,f.properties.a3,f.properties.n);return{color:'#ffffff',weight:.6,fillColor:subColor(m?m.Basic:null),fillOpacity:.6};},
+    onEachFeature:(f,l)=>{const m=subLookup(sub,f.properties.a3,f.properties.n);l.bindTooltip(m?`<b>${esc(f.properties.n)}</b> — JMP region “${esc(m.region)}”, ${m.year}<br>At least basic water: <b>${fmt(m.Basic,0)}%</b> · limited ${fmt(m.Limited,0)}% · unimproved ${fmt(m.Unimproved,0)}% · surface water ${fmt(m['Surface water'],0)}%<br><span style="opacity:.7">all population (urban + rural); national rural poorest quintile: basic ${fmt(m.country.rural_q1?.Basic,0)}%, surface ${fmt(m.country.rural_q1?.['Surface water'],0)}%</span>`:`<b>${esc(f.properties.n)}</b><br>not mapped to a JMP region yet`,{sticky:true});}});
+  subLayer.addTo(subGroup);}catch(e){console.warn('sub layer',e);}});
+subGroup.on('remove',()=>{if(!map.hasLayer(needGroup))$('#needlegend').style.display='none';});
+ctl.addOverlay(subGroup,'Water need — subnational regions (JMP inequalities; CO so far)');
+
 // ---------- Desalination plants: OSM (existing) + curated (planned) ----------
 let desalOSM=null,desalOSMPromise=null,plannedList=null;
 const desalGroup=L.layerGroup(),plannedGroup=L.layerGroup();
@@ -240,7 +257,7 @@ ctl.addOverlay(needGroup,'Water need — rural safely-managed water (WHO/UNICEF 
 ctl.addOverlay(desalGroup,'Existing desalination plants (OpenStreetMap)');
 ctl.addOverlay(plannedGroup,'Planned / recent desal & solar RO (curated)');
 // prefetch quietly so the brief tiles have data
-setTimeout(()=>{loadJMP();loadPlanned();loadDesalOSM().catch(()=>{});},1500);
+setTimeout(()=>{loadJMP();loadPlanned();loadSub();loadDesalOSM().catch(()=>{});},1500);
 
 // ---------- cards: need + desal nearby ----------
 async function adNeed(cc3,cc2,loc){
@@ -253,9 +270,13 @@ async function adNeed(cc3,cc2,loc){
       <tr><td>${dotc(d.basw_ru==null?'':d.basw_ru>=90?'ok':d.basw_ru>=70?'warn':'bad')}At least basic drinking water</td><td class="num">${fmt(d.basw_ru,0)}%</td><td class="num">${fmt(d.basw_ur,0)}%</td><td class="num">${fmt(d.basw,0)}%</td></tr>
       <tr><td>Safely managed sanitation</td><td class="num">—</td><td class="num">—</td><td class="num">${fmt(d.sms,0)}%</td></tr></tbody></table></div>
       <div class="hint">${esc(d.name)}, JMP ${esc(d.smdw_y||d.basw_y||'')}. National figures; rural gaps inside a country can be far larger (e.g. La Guajira vs Bogotá). Subnational JMP estimates are a to-do. Turn on the "Water need" map layer to compare countries.</div>`);
-    src(c,'WHO/UNICEF Joint Monitoring Programme, via World Bank Indicators API','https://washdata.org/data');
+    let sub=null;try{const sd=await loadSub();const st=loc.addr&&(loc.addr.state||loc.addr.region||loc.addr.province);sub=st?subLookup(sd,cc3,st):null;
+      if(sub){html(c,`<div style="margin-top:6px"><b>Subnational — ${esc(st)}</b> (JMP region “${esc(sub.region)}”, survey ${sub.year}): at least basic water <b>${fmt(sub.Basic,0)}%</b>${dotc(sub.Basic>=95?'ok':sub.Basic>=85?'warn':'bad')} · unimproved ${fmt(sub.Unimproved,0)}% · surface water ${fmt(sub['Surface water'],0)}% — all population.<br>National rural, poorest quintile: basic <b>${fmt(sub.country.rural_q1?.Basic,0)}%</b>, surface water <b>${fmt(sub.country.rural_q1?.['Surface water'],0)}%</b> — the population a community plant targets.</div>`);cov('Water access — subnational (JMP)','ok',`${st}: basic ${fmt(sub.Basic,0)}%`);}
+      else if(sd[cc3]){html(c,`<div class="hint">Subnational JMP data exists for this country but “${esc(st||'?')}” is not mapped to a survey region yet (tools/jmp_region_map.json).</div>`);}
+    }catch(e){}
+    src(c,'WHO/UNICEF Joint Monitoring Programme, via World Bank Indicators API; subnational from JMP inequalities files','https://washdata.org/data');
     cov('Water access context (JMP)','ok',`rural safely managed ${fmt(d.smdw_ru,0)}%`);
-    return {gapRu,d};
+    return {gapRu,d,sub};
   }catch(e){fail(c,e,'JMP');cov('Water access context (JMP)','missing',e.message);return {};}
 }
 async function adDesalNearby(lat,lon){
@@ -820,7 +841,8 @@ function renderBrief(ctx){
     {cls:mCls||(ctx.irca!=null?(ctx.irca<=5?'ok':ctx.irca<=35?'warn':'bad'):'warn'),l:micro?'E. coli / coliforms':ctx.irca!=null?'IRCA risk index':'E. coli / coliforms',v:micro?(micro.max>0?`${fmt(micro.max,0)}<small>max /100 mL</small>`:'0<small>/100 mL</small>'):ctx.irca!=null?`${fmt(ctx.irca,1)}<small>/100</small>`:'not sampled',n:micro?`${micro.n} samples · last ${String(micro.last).slice(0,7)}`:ctx.irca!=null?'tap-water risk (INS); ≤5 no risk':'no bacteriology in open data'},
     {cls:util?'ok':'warn',l:'Existing supply',v:util?'utility':'self-supplied',n:util?esc(util):'no registered system found'},
     {cls:covCls,l:'Data coverage',v:`${okN}<small>/ ${totN}</small>`,n:ctx.wwtp?`WWTP nearby${ctx.wwtpName?': '+esc(ctx.wwtpName):''}`:'no treatment plant mapped'},
-    {cls:ctx.need?.gapRu==null?'':ctx.need.gapRu>=50?'bad':ctx.need.gapRu>=20?'warn':'ok',l:'Rural water need (national)',v:ctx.need?.gapRu!=null?`${fmt(ctx.need.gapRu,0)}<small>% lack safe water</small>`:'—',n:ctx.need?.d?`${esc(ctx.need.d.name)} rural, JMP ${esc(ctx.need.d.smdw_y||ctx.need.d.basw_y||'')}`:'no JMP estimate'},
+    (ctx.need?.sub?{cls:ctx.need.sub.Basic>=95?'ok':ctx.need.sub.Basic>=85?'warn':'bad',l:'Water need (region)',v:`${fmt(100-ctx.need.sub.Basic,0)}<small>% lack basic</small>`,n:`${esc(ctx.need.sub.region)} ${ctx.need.sub.year} · rural poorest: ${fmt(100-(ctx.need.sub.country.rural_q1?.Basic??100),0)}% lack basic`}:
+    {cls:ctx.need?.gapRu==null?'':ctx.need.gapRu>=50?'bad':ctx.need.gapRu>=20?'warn':'ok',l:'Rural water need (national)',v:ctx.need?.gapRu!=null?`${fmt(ctx.need.gapRu,0)}<small>% lack safe water</small>`:'—',n:ctx.need?.d?`${esc(ctx.need.d.name)} rural, JMP ${esc(ctx.need.d.smdw_y||ctx.need.d.basw_y||'')}`:'no JMP estimate'}),
     {cls:ctx.ds?.nearest?'info':ctx.ds?.nearestPlanned?'warn':'',l:'Desal nearby',v:ctx.ds?.nearest?`${fmt(ctx.ds.nearest.d,0)}<small>km</small>`:ctx.ds?.nearestPlanned?`${fmt(ctx.ds.nearestPlanned.d,0)}<small>km planned</small>`:'none ≤150 km',n:ctx.ds?.nearest?esc(ctx.ds.nearest.name):ctx.ds?.nearestPlanned?esc(ctx.ds.nearestPlanned.name):'no plant mapped'}];
   const verdict=[];
   if(best&&sol){verdict.push(`<b>${esc(best.src)}</b> is the lowest-energy option found: about <b>${fmt(best.pv,0)} kWp</b> of PV with ${fmt(best.batt,0)} kWh of battery and a ${fmt(best.gen,0)} kVA standby set, on roughly ${fmt(best.land/10000,2)} ha.`);}
