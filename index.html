@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AquaScout</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+/* Layout: full-height map on the left, a scrolling dossier on the right; stacks on phones.
+   Colors are a cold hydrographic palette: slate paper, deep water ink, a brackish teal accent,
+   semantic good/warn/bad kept separate from the accent. */
+:root{
+  --bg:#f3f5f6; --panel:#ffffff; --fg:#17232b; --muted:#5e6d77; --line:#d6dde2;
+  --accent:#0f6f86; --accent-ink:#ffffff; --chip:#e6eff2;
+  --good:#1f7a4d; --warn:#b26a00; --bad:#b3261e; --info:#3a5f8f;
+  --sea:#2c5e8a; --brackish:#4f8a8b; --fresh:#2f8f5b; --waste:#7a5a3a;
+  --font:"IBM Plex Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0f1519; --panel:#161e24; --fg:#e4eaee; --muted:#93a3ad; --line:#2a353d;
+  --accent:#4fb3c9; --accent-ink:#0b1216; --chip:#1f2a31;
+  --good:#5ec48f; --warn:#e4a747; --bad:#f08b84; --info:#8fb3e0;
+  --sea:#7fb0dd; --brackish:#8fc5c6; --fresh:#78cf9d; --waste:#c9a27c; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0f1519; --panel:#161e24; --fg:#e4eaee; --muted:#93a3ad; --line:#2a353d;
+  --accent:#4fb3c9; --accent-ink:#0b1216; --chip:#1f2a31;
+  --good:#5ec48f; --warn:#e4a747; --bad:#f08b84; --info:#8fb3e0;
+  --sea:#7fb0dd; --brackish:#8fc5c6; --fresh:#78cf9d; --waste:#c9a27c; color-scheme:dark}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font-family:var(--font);font-size:14px;line-height:1.45}
+#app{display:grid;grid-template-columns:minmax(0,1fr) 440px;height:100%}
+#map{height:100%;min-height:320px;background:#b8cfe0}
+#side{display:flex;flex-direction:column;min-width:0;border-left:1px solid var(--line);background:var(--panel)}
+header{padding:12px max(16px,env(safe-area-inset-right,0px)) 10px 16px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:8px}
+h1{font-size:17px;margin:0;font-weight:600;letter-spacing:.01em;display:flex;align-items:baseline;gap:8px}
+h1 small{font-family:var(--mono);font-size:11px;color:var(--muted);font-weight:400}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+input[type=text],input[type=number],select{font:inherit;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:6px 8px;min-width:0}
+input[type=text]{flex:1 1 180px}
+input[type=number]{width:90px}
+button{font:inherit;font-weight:500;border:1px solid var(--line);background:var(--chip);color:var(--fg);border-radius:6px;padding:6px 10px;cursor:pointer}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+label.small{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:4px}
+#dossier{overflow:auto;flex:1;padding:12px 16px 32px;padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:10px}
+.hint{color:var(--muted);font-size:13px}
+section.card{border:1px solid var(--line);border-radius:8px;overflow:hidden}
+section.card>h2{margin:0;font-size:12px;letter-spacing:.06em;text-transform:uppercase;padding:8px 12px;background:var(--chip);display:flex;justify-content:space-between;align-items:center;gap:8px}
+section.card>h2 .st{font-family:var(--mono);font-size:11px;font-weight:400;letter-spacing:0;text-transform:none}
+section.card>.body{padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.src{font-family:var(--mono);font-size:11px;color:var(--muted)}
+.src a{color:var(--info)}
+.kv{display:grid;grid-template-columns:max-content 1fr;gap:3px 12px;font-variant-numeric:tabular-nums}
+.kv dt{color:var(--muted)} .kv dd{margin:0;min-width:0;overflow-wrap:anywhere}
+table{border-collapse:collapse;width:100%;font-size:13px;font-variant-numeric:tabular-nums}
+th,td{text-align:left;padding:4px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--muted);font-weight:500;font-size:12px}
+td.num,th.num{text-align:right}
+.tbl{overflow-x:auto}
+.pill{display:inline-block;font-family:var(--mono);font-size:11px;padding:1px 7px;border-radius:999px;border:1px solid currentColor}
+.ok{color:var(--good)} .warn{color:var(--warn)} .bad{color:var(--bad)} .none{color:var(--muted)} .info{color:var(--info)}
+.err{color:var(--bad);font-size:12px;font-family:var(--mono);overflow-wrap:anywhere}
+.months{display:grid;grid-template-columns:repeat(12,1fr);gap:2px;align-items:end;height:64px}
+.months div{background:var(--accent);opacity:.75;border-radius:2px 2px 0 0;position:relative}
+.months div span{position:absolute;top:100%;left:0;right:0;text-align:center;font-size:9px;color:var(--muted);font-family:var(--mono)}
+.months-wrap{padding-bottom:14px}
+ul.plain{margin:0;padding-left:18px}
+.cov li{margin:2px 0}
+.leaflet-container{font:inherit}
+.legend{position:absolute;bottom:12px;left:12px;z-index:500;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 10px;font-size:12px;display:flex;flex-direction:column;gap:2px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px}
+#mapwrap{position:relative;min-width:0}
+.busy{animation:pulse 1.2s infinite}
+@keyframes pulse{50%{opacity:.4}}
+@media (prefers-reduced-motion:reduce){.busy{animation:none}}
+@media (max-width:860px){
+  #app{grid-template-columns:1fr;grid-template-rows:46vh 1fr}
+  #side{border-left:0;border-top:1px solid var(--line)}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="mapwrap">
+    <div id="map"></div>
+    <div class="legend">
+      <div><i style="background:var(--sea)"></i>Monitoring / gauges</div>
+      <div><i style="background:var(--brackish)"></i>Wells, springs, intakes</div>
+      <div><i style="background:var(--fresh)"></i>Water works / utility</div>
+      <div><i style="background:var(--waste)"></i>Wastewater treatment</div>
+    </div>
+  </div>
+  <aside id="side">
+    <header>
+      <h1>AquaScout <small>v0 · water data at any point</small></h1>
+      <div class="row">
+        <input id="q" type="text" placeholder="Search a place, or click the map" aria-label="Search a place">
+        <button id="go" class="primary">Scan</button>
+      </div>
+      <div class="row">
+        <label class="small">Radius km <input id="radius" type="number" min="1" max="50" value="10"></label>
+        <label class="small">People <input id="pop" type="number" min="0" step="50" placeholder="auto"></label>
+        <label class="small"><input id="gsw" type="checkbox"> Surface-water layer</label>
+      </div>
+    </header>
+    <div id="dossier">
+      <p class="hint">Click anywhere. AquaScout queries the open water, solar and infrastructure APIs that cover that point and reports what it found and what nobody monitors there. Example: La Guajira (11.55, −72.90), Exuma (23.5, −75.8), Marseille (43.30, 5.37), Imperial Valley (32.8, −115.6).</p>
+    </div>
+  </aside>
+</div>
+
+<script>
+// ---------- helpers ----------
+const $=s=>document.querySelector(s);
+const fmt=(n,d=1)=>n==null||isNaN(n)?'–':Number(n).toLocaleString(undefined,{maximumFractionDigits:d});
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const km=(a,b)=>{const R=6371,dLat=(b[0]-a[0])*Math.PI/180,dLon=(b[1]-a[1])*Math.PI/180,la1=a[0]*Math.PI/180,la2=b[0]*Math.PI/180;const h=Math.sin(dLat/2)**2+Math.cos(la1)*Math.cos(la2)*Math.sin(dLon/2)**2;return 2*R*Math.asin(Math.sqrt(h));};
+function bbox(lat,lon,r){const dLat=r/111,dLon=r/(111*Math.cos(lat*Math.PI/180));return [lon-dLon,lat-dLat,lon+dLon,lat+dLat];}
+async function getJSON(url,opt={}){const ms=opt.timeout||25000;const timeout=new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout after '+ms/1000+'s')),ms));const work=(async()=>{const r=await fetch(url);if(!r.ok)throw new Error('HTTP '+r.status);return opt.text?await r.text():await r.json();})();return Promise.race([work,timeout]);}
+function parseCSV(text){const rows=[];let row=[],f='',q=false;for(let i=0;i<text.length;i++){const ch=text[i];if(q){if(ch=='"'){if(text[i+1]=='"'){f+='"';i++;}else q=false;}else f+=ch;}else{if(ch=='"')q=true;else if(ch==','){row.push(f);f='';}else if(ch=='\n'){row.push(f);rows.push(row);row=[];f='';}else if(ch!='\r')f+=ch;}}if(f||row.length){row.push(f);rows.push(row);}const h=rows.shift()||[];return rows.filter(r=>r.length>1).map(r=>Object.fromEntries(h.map((k,i)=>[k,r[i]])));}
+function classifyTDS(mgl){if(mgl==null)return null;if(mgl<1000)return{c:'fresh',l:'Fresh (<1 g/L)',cls:'ok'};if(mgl<3000)return{c:'brackish',l:'Slightly brackish (1–3 g/L)',cls:'info'};if(mgl<10000)return{c:'brackish',l:'Brackish (3–10 g/L)',cls:'warn'};if(mgl<30000)return{c:'saline',l:'Highly saline (10–30 g/L)',cls:'warn'};return{c:'sea',l:'Seawater-like (>30 g/L)',cls:'bad'};}
+const ecToTDS=us=>us*0.65; // µS/cm → mg/L, typical factor 0.55–0.75
+
+// ---------- map ----------
+const map=L.map('map',{zoomControl:true}).setView([20,-40],3);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
+const gsw=L.tileLayer('https://storage.googleapis.com/global-surface-water/tiles2021/occurrence/{z}/{x}/{y}.png',{maxZoom:13,opacity:.7,attribution:'JRC Global Surface Water'});
+$('#gsw').addEventListener('change',e=>e.target.checked?gsw.addTo(map):map.removeLayer(gsw));
+let marker,circle,layerGroup=L.layerGroup().addTo(map);
+const colors={sea:'#2c5e8a',brackish:'#4f8a8b',fresh:'#2f8f5b',waste:'#7a5a3a'};
+function dot(lat,lon,kind,label){L.circleMarker([lat,lon],{radius:6,color:colors[kind],fillColor:colors[kind],fillOpacity:.8,weight:1}).bindPopup(label).addTo(layerGroup);}
+map.on('click',e=>scan(e.latlng.lat,e.latlng.lng));
+$('#go').addEventListener('click',async()=>{const q=$('#q').value.trim();if(!q)return;const m=q.match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);if(m){map.setView([+m[1],+m[2]],11);return scan(+m[1],+m[2]);}try{const r=await getJSON('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+encodeURIComponent(q));if(r[0]){map.setView([+r[0].lat,+r[0].lon],11);scan(+r[0].lat,+r[0].lon);}else alert('Place not found');}catch(e){alert('Geocoder error: '+e.message);}});
+$('#q').addEventListener('keydown',e=>{if(e.key==='Enter')$('#go').click();});
+
+// ---------- dossier rendering ----------
+const dossier=$('#dossier');
+const cards={};
+function card(id,title){const s=document.createElement('section');s.className='card';s.id='c-'+id;s.innerHTML=`<h2><span>${esc(title)}</span><span class="st busy">querying…</span></h2><div class="body"></div>`;dossier.appendChild(s);cards[id]={el:s,body:s.querySelector('.body'),st:s.querySelector('.st')};return cards[id];}
+function setStatus(c,txt,cls){c.st.textContent=txt;c.st.className='st '+(cls||'');}
+function src(c,label,url){const p=document.createElement('div');p.className='src';p.innerHTML=url?`Source: <a href="${esc(url)}" target="_blank" rel="noopener">${esc(label)}</a>`:'Source: '+esc(label);c.body.appendChild(p);}
+function html(c,h){const d=document.createElement('div');d.innerHTML=h;c.body.appendChild(d);}
+function fail(c,e,label){setStatus(c,'error','bad');html(c,`<div class="err">${esc(label||'')} ${esc(e.message||e)}</div>`);}
+function table(rows,cols){if(!rows.length)return '<div class="none">none</div>';return `<div class="tbl"><table><thead><tr>${cols.map(x=>`<th class="${x.num?'num':''}">${esc(x.h)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(x=>`<td class="${x.num?'num':''}">${x.f(r)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;}
+
+// coverage ledger
+let coverage=[];
+function cov(topic,state,note){coverage.push({topic,state,note});}
+
+// ---------- adapters ----------
+const RO_PARAMS=['Total dissolved solids','Specific conductance','Salinity','Chloride','Sodium','Sulfate','Hardness, Ca, Mg','Alkalinity, total','Silica','Boron','Barium','Strontium','Nitrate','Arsenic','Fluoride','Iron','Manganese','pH','Turbidity','Temperature, water','Total organic carbon','Calcium','Magnesium','Bromide'];
+const MICRO=['Escherichia coli','Fecal Coliform','Total Coliform','Enterococcus','Coliform','Escherichia coli (E. coli)'];
+
+async function adLocation(lat,lon){
+  const c=card('loc','Location');
+  try{
+    const r=await getJSON(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=10`);
+    const a=r.address||{};const cc=(a.country_code||'').toUpperCase();
+    const elev=await getJSON(`https://api.open-meteo.com/v1/elevation?latitude=${lat}&longitude=${lon}`).catch(()=>null);
+    setStatus(c,cc||'?','ok');
+    html(c,`<dl class="kv"><dt>Place</dt><dd>${esc(r.display_name||'—')}</dd><dt>Coordinates</dt><dd class="mono">${lat.toFixed(5)}, ${lon.toFixed(5)}</dd><dt>Elevation</dt><dd>${elev?fmt(elev.elevation[0],0)+' m':'–'}</dd><dt>Country</dt><dd>${esc(a.country||'—')} (${cc||'?'})</dd></dl>`);
+    src(c,'OpenStreetMap Nominatim · Open-Meteo elevation');
+    return {cc,addr:a,elev:elev?elev.elevation[0]:null};
+  }catch(e){fail(c,e);return {cc:'',addr:{}};}
+}
+
+async function adSolar(lat,lon){
+  const c=card('solar','Solar & climate');
+  try{
+    const u=`https://power.larc.nasa.gov/api/temporal/climatology/point?parameters=ALLSKY_SFC_SW_DWN,PRECTOTCORR,T2M,RH2M&community=RE&longitude=${lon}&latitude=${lat}&format=JSON`;
+    const r=await getJSON(u);const p=r.properties.parameter;const M=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+    const ghi=M.map(m=>p.ALLSKY_SFC_SW_DWN[m]);const rain=M.map(m=>p.PRECTOTCORR[m]);
+    const worst=Math.min(...ghi),ann=p.ALLSKY_SFC_SW_DWN.ANN;const annRain=rain.reduce((a,b)=>a+b,0)*30.4;
+    const mx=Math.max(...ghi);
+    setStatus(c,`${fmt(ann,2)} kWh/m²/d`,ann>=4.5?'ok':ann>=3.5?'warn':'bad');
+    html(c,`<dl class="kv"><dt>GHI annual</dt><dd><b>${fmt(ann,2)}</b> kWh/m²/day (peak-sun-hours)</dd><dt>GHI worst month</dt><dd><b>${fmt(worst,2)}</b> — size PV on this</dd><dt>Rainfall</dt><dd>${fmt(annRain,0)} mm/yr</dd><dt>Air temp</dt><dd>${fmt(p.T2M.ANN,1)} °C mean · RH ${fmt(p.RH2M.ANN,0)}%</dd></dl>
+    <div class="months-wrap"><div class="months">${ghi.map((v,i)=>`<div style="height:${Math.round(v/mx*100)}%" title="${M[i]} ${fmt(v,2)}"><span>${M[i][0]}</span></div>`).join('')}</div></div>`);
+    src(c,'NASA POWER climatology (RE community, 0.5°)',u);
+    cov('Solar resource','ok','NASA POWER monthly climatology');
+    return {ann,worst,annRain};
+  }catch(e){fail(c,e);cov('Solar resource','missing','NASA POWER unreachable');return null;}
+}
+
+async function adRiverFlow(lat,lon){
+  const c=card('flow','River discharge (modelled)');
+  try{
+    const u=`https://flood-api.open-meteo.com/v1/flood?latitude=${lat}&longitude=${lon}&daily=river_discharge,river_discharge_mean,river_discharge_min,river_discharge_max&past_days=30&forecast_days=1`;
+    const r=await getJSON(u);const d=r.daily;const vals=d.river_discharge.filter(x=>x!=null);
+    if(!vals.length)throw new Error('no GloFAS cell here (ocean or no river network)');
+    const last=vals[vals.length-1],mean=d.river_discharge_mean?.filter(x=>x!=null).slice(-1)[0];
+    setStatus(c,`${fmt(last,1)} m³/s`,'ok');
+    html(c,`<dl class="kv"><dt>Latest (GloFAS cell)</dt><dd><b>${fmt(last,1)}</b> m³/s</dd><dt>30-day range</dt><dd>${fmt(Math.min(...vals),1)} – ${fmt(Math.max(...vals),1)} m³/s</dd><dt>Climatological mean</dt><dd>${fmt(mean,1)} m³/s</dd></dl><div class="hint">GloFAS v4 at ~5 km: the largest river in the grid cell, not necessarily a stream at this exact point. Use for order-of-magnitude surface-water availability.</div>`);
+    src(c,'Open-Meteo Flood API (Copernicus GloFAS)',u);cov('Surface-water quantity','ok','GloFAS modelled discharge');
+  }catch(e){fail(c,e);cov('Surface-water quantity','missing',e.message);}
+}
+
+async function adOSM(lat,lon,r){
+  const c=card('osm','Water bodies & infrastructure (OpenStreetMap)');
+  const rm=r*1000;
+  const q=`[out:json][timeout:40];(
+    nwr(around:${rm},${lat},${lon})["natural"="water"];
+    nwr(around:${rm},${lat},${lon})["waterway"~"^(river|stream|canal)$"];
+    nwr(around:${rm},${lat},${lon})["natural"="coastline"];
+    nwr(around:${rm},${lat},${lon})["man_made"~"^(water_well|water_works|wastewater_plant|desalination_plant|reservoir_covered|water_tower|pumping_station|storage_tank)$"];
+    nwr(around:${rm},${lat},${lon})["natural"="spring"];
+    nwr(around:${rm},${lat},${lon})["landuse"~"^(reservoir|salt_pond|basin)$"];
+    node(around:${rm*2},${lat},${lon})["place"~"^(city|town|village|hamlet)$"]["population"];
+  );out tags center 400;`;
+  try{
+    const r2=await getJSON('https://overpass-api.de/api/interpreter?data='+encodeURIComponent(q),{timeout:60000});
+    const el=r2.elements||[];const cnt={};const feats=[];let coast=false;const places=[];
+    for(const e of el){const t=e.tags||{};const la=e.lat??e.center?.lat,lo=e.lon??e.center?.lon;
+      if(t.natural==='coastline'){coast=true;continue;}
+      if(t.place&&t.population){places.push({name:t.name,pop:+String(t.population).replace(/\D/g,''),d:la?km([lat,lon],[la,lo]):null,place:t.place});continue;}
+      let kind=null,cls=null;
+      if(t.man_made==='wastewater_plant'){kind='Wastewater plant';cls='waste';}
+      else if(t.man_made==='water_works'){kind='Water works';cls='fresh';}
+      else if(t.man_made==='desalination_plant'){kind='Desalination plant';cls='fresh';}
+      else if(t.man_made==='water_well'){kind='Well';cls='brackish';}
+      else if(t.natural==='spring'){kind='Spring';cls='brackish';}
+      else if(t.man_made==='pumping_station'){kind='Pumping station';cls='fresh';}
+      else if(t.man_made==='water_tower'||t.man_made==='storage_tank'||t.man_made==='reservoir_covered'){kind='Storage';cls='fresh';}
+      else if(t.landuse==='salt_pond'){kind='Salt pond';cls='sea';}
+      else if(t.landuse==='reservoir'||t.water==='reservoir'){kind='Reservoir';cls='sea';}
+      else if(t.natural==='water'){kind=t.water?('Water: '+t.water):'Water body';cls='sea';}
+      else if(t.waterway){kind=t.waterway[0].toUpperCase()+t.waterway.slice(1);cls='sea';}
+      if(!kind)continue;cnt[kind]=(cnt[kind]||0)+1;
+      if(la!=null){const f={kind,cls,name:t.name||'',d:km([lat,lon],[la,lo]),la,lo,tags:t};feats.push(f);}
+    }
+    feats.sort((a,b)=>a.d-b.d);
+    for(const f of feats.filter(f=>f.cls!=='sea').slice(0,60))dot(f.la,f.lo,f.cls,`<b>${esc(f.kind)}</b><br>${esc(f.name)}<br>${fmt(f.d,1)} km${f.tags.salinity?'<br>salinity: '+esc(f.tags.salinity):''}${f.tags.depth?'<br>depth: '+esc(f.tags.depth):''}`);
+    setStatus(c,`${feats.length} features`,feats.length?'ok':'none');
+    const summary=Object.entries(cnt).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`${esc(k)} ×${v}`).join(' · ');
+    html(c,`<div>${coast?'<span class="pill info">Coastline within radius — seawater intake possible</span> ':''}${summary||'<span class="none">Nothing mapped within radius.</span>'}</div>`);
+    const infra=feats.filter(f=>f.cls!=='sea').slice(0,15);
+    if(infra.length)html(c,table(infra,[{h:'Type',f:r=>esc(r.kind)},{h:'Name',f:r=>esc(r.name||'—')},{h:'km',num:1,f:r=>fmt(r.d,1)},{h:'Tags',f:r=>esc([r.tags.operator,r.tags.salinity&&('sal '+r.tags.salinity),r.tags.depth&&('depth '+r.tags.depth),r.tags.capacity&&('cap '+r.tags.capacity)].filter(Boolean).join(', '))}]));
+    const named=feats.filter(f=>f.cls==='sea'&&f.name);const seen=new Set();const uniq=named.filter(f=>!seen.has(f.name)&&seen.add(f.name)).slice(0,10);
+    if(uniq.length)html(c,`<div><b>Named water bodies:</b> ${uniq.map(f=>`${esc(f.name)} (${esc(f.kind.toLowerCase())}, ${fmt(f.d,1)} km)`).join('; ')}</div>`);
+    src(c,'OpenStreetMap via Overpass API');
+    cov('Mapped water bodies / infrastructure',feats.length?'ok':'none',feats.length?`${feats.length} OSM features`:'nothing mapped in OSM');
+    cov('Wastewater treatment (OSM)',cnt['Wastewater plant']?'ok':'none',cnt['Wastewater plant']?`${cnt['Wastewater plant']} plant(s)`:'no WWTP mapped');
+    places.sort((a,b)=>a.d-b.d);
+    return {coast,places,wells:cnt['Well']||0,desal:cnt['Desalination plant']||0};
+  }catch(e){fail(c,e);cov('Mapped water bodies / infrastructure','missing','Overpass unreachable');return {coast:false,places:[]};}
+}
+
+function adDemand(places){
+  const c=card('demand','Community & demand');
+  const manual=+$('#pop').value||0;
+  const near=places.filter(p=>p.pop>0).slice(0,5);
+  const pop=manual||(near[0]?near[0].pop:0);
+  const lpcd=100;
+  const Q=pop*lpcd*1.15/1000;
+  setStatus(c,pop?`${fmt(pop,0)} people`:'enter population',pop?'ok':'warn');
+  html(c,`<dl class="kv"><dt>Population used</dt><dd><b>${pop?fmt(pop,0):'—'}</b> ${manual?'(entered)':near[0]?`(nearest OSM place: ${esc(near[0].name)}, ${fmt(near[0].d,1)} km)`:'(no OSM population tag nearby — enter it above)'}</dd><dt>Demand basis</dt><dd>${lpcd} L/person/day + 15% losses</dd><dt>Average demand</dt><dd><b>${fmt(Q,1)}</b> m³/day · design ${fmt(Q*1.3,0)} m³/day (peak ×1.3)</dd></dl>`);
+  if(near.length>1)html(c,`<div class="hint">Other places with population: ${near.slice(1).map(p=>`${esc(p.name)} ${fmt(p.pop,0)} (${fmt(p.d,0)} km)`).join('; ')}</div>`);
+  src(c,'OpenStreetMap place tags; WorldPop/GHSL in v1');
+  return {pop,Q};
+}
+
+async function adUSGS(lat,lon,r){
+  const c=card('usgs','USGS gauges & wells (US)');
+  try{
+    const b=bbox(lat,lon,r).join(',');
+    const u=`https://api.waterdata.usgs.gov/ogcapi/v1/collections/monitoring-locations/items?bbox=${b}&f=json&limit=300`;
+    const r1=await getJSON(u);const f=(r1.features||[]).map(x=>({...x.properties,la:x.geometry.coordinates[1],lo:x.geometry.coordinates[0]})).map(x=>({...x,d:km([lat,lon],[x.la,x.lo])})).sort((a,b)=>a.d-b.d);
+    const types={};for(const x of f){const t=x.site_type||x.site_type_code||'?';types[t]=(types[t]||0)+1;}
+    for(const x of f.slice(0,80))dot(x.la,x.lo,(x.site_type||'').match(/Well|Spring/i)?'brackish':'sea',`<b>USGS ${esc(x.monitoring_location_number||x.id||'')}</b><br>${esc(x.monitoring_location_name||'')}<br>${esc(x.site_type||'')} · ${fmt(x.d,1)} km`);
+    let latest=[];
+    try{const u2=`https://api.waterdata.usgs.gov/ogcapi/v1/collections/latest-continuous/items?bbox=${b}&f=json&limit=300`;const r2=await getJSON(u2);latest=(r2.features||[]).map(x=>x.properties);}catch(e){}
+    const pc={'00060':'Discharge ft³/s','00065':'Gage height ft','72019':'Depth to water ft','62610':'GW level ft NGVD29','62611':'GW level ft NAVD88','00095':'Specific cond. µS/cm','00010':'Water temp °C','63680':'Turbidity FNU','00300':'Dissolved O₂ mg/L','00400':'pH','99133':'Nitrate mg/L','00480':'Salinity ppt','90095':'Spec. cond µS/cm'};
+    const lrows=latest.filter(x=>pc[x.parameter_code]).map(x=>({site:x.monitoring_location_id,p:pc[x.parameter_code],v:x.value,t:x.time})).slice(0,25);
+    setStatus(c,`${f.length} sites`,f.length?'ok':'none');
+    html(c,`<div>${Object.entries(types).map(([k,v])=>`${esc(k)} ×${v}`).join(' · ')||'<span class="none">No USGS monitoring locations within radius.</span>'}</div>`);
+    if(lrows.length)html(c,'<b>Latest continuous readings</b>'+table(lrows,[{h:'Site',f:r=>esc(r.site)},{h:'Parameter',f:r=>esc(r.p)},{h:'Value',num:1,f:r=>fmt(r.v,2)},{h:'Time',f:r=>esc(String(r.t||'').slice(0,16))}]));
+    const gw=f.filter(x=>/Well|Spring/i.test(x.site_type||''));
+    if(gw.length)html(c,`<b>Groundwater sites</b>`+table(gw.slice(0,10),[{h:'Site',f:r=>esc(r.monitoring_location_number||'')},{h:'Name',f:r=>esc(r.monitoring_location_name||'')},{h:'Aquifer',f:r=>esc(r.aquifer_code||r.national_aquifer_code||'')},{h:'Depth ft',num:1,f:r=>fmt(r.well_depth,0)},{h:'km',num:1,f:r=>fmt(r.d,1)}]));
+    src(c,'USGS Water Data APIs (OGC API v1)',u);
+    cov('Gauges & monitoring wells (USGS)',f.length?'ok':'none',`${f.length} sites · ${latest.length} live series`);
+    return f;
+  }catch(e){fail(c,e,'USGS');cov('Gauges & monitoring wells (USGS)','missing',e.message);return [];}
+}
+
+async function adWQP(lat,lon,r){
+  const c=card('wqp','Water chemistry & microbiology (WQP, US)');
+  const mi=(r*0.6214).toFixed(1);
+  try{
+    const us=`https://www.waterqualitydata.us/data/Station/search?lat=${lat}&long=${lon}&within=${mi}&mimeType=geojson`;
+    const st=await getJSON(us);const sf=(st.features||[]).map(x=>({...x.properties,la:x.geometry.coordinates[1],lo:x.geometry.coordinates[0]}));
+    const types={};for(const x of sf){const t=x.ResolvedMonitoringLocationTypeName||x.MonitoringLocationTypeName||'?';types[t]=(types[t]||0)+1;}
+    for(const x of sf.slice(0,120))dot(x.la,x.lo,/Well|Spring|Subsurface/i.test(x.MonitoringLocationTypeName||'')?'brackish':'sea',`<b>${esc(x.MonitoringLocationName||x.MonitoringLocationIdentifier)}</b><br>${esc(x.MonitoringLocationTypeName||'')}<br>${x.resultCount||0} results`);
+    const since=new Date();since.setFullYear(since.getFullYear()-15);const sd=`${String(since.getMonth()+1).padStart(2,'0')}-${String(since.getDate()).padStart(2,'0')}-${since.getFullYear()}`;
+    const chars=[...RO_PARAMS,...MICRO].map(x=>'characteristicName='+encodeURIComponent(x)).join('&');
+    const ur=`https://www.waterqualitydata.us/data/Result/search?lat=${lat}&long=${lon}&within=${mi}&startDateLo=${sd}&${chars}&sampleMedia=Water&mimeType=csv&zip=no&dataProfile=resultPhysChem`;
+    let rows=[];
+    try{const txt=await getJSON(ur,{text:true,timeout:90000});rows=parseCSV(txt);}catch(e){html(c,`<div class="err">Result query: ${esc(e.message)} (station list still shown)</div>`);}
+    const agg={};
+    for(const x of rows){const k=x.CharacteristicName;const v=parseFloat(x['ResultMeasureValue']);if(isNaN(v))continue;const med=/ground|well/i.test(x.ActivityMediaSubdivisionName||'')||/Well|Spring/i.test(x.MonitoringLocationTypeName||'')?'GW':'SW';const key=k+'|'+med;const a=agg[key]||(agg[key]={name:k,med,unit:x['ResultMeasure/MeasureUnitCode'],n:0,vals:[],last:'',sites:new Set()});a.n++;a.vals.push(v);if(x.ActivityStartDate>a.last)a.last=x.ActivityStartDate;a.sites.add(x.MonitoringLocationIdentifier);}
+    const stat=a=>{const s=[...a.vals].sort((x,y)=>x-y);return{min:s[0],median:s[Math.floor(s.length/2)],max:s[s.length-1]};};
+    const list=Object.values(agg).map(a=>({...a,...stat(a)}));
+    const chem=list.filter(a=>!MICRO.some(m=>a.name.toLowerCase().startsWith(m.toLowerCase().split(' ')[0])));
+    const micro=list.filter(a=>MICRO.some(m=>a.name.toLowerCase().startsWith(m.toLowerCase().split(' ')[0])));
+    setStatus(c,`${sf.length} stations · ${rows.length} results`,sf.length?'ok':'none');
+    html(c,`<div>${Object.entries(types).map(([k,v])=>`${esc(k)} ×${v}`).join(' · ')||'<span class="none">No WQP stations within radius.</span>'}</div>`);
+    const col=[{h:'Parameter',f:r=>esc(r.name)},{h:'Med',f:r=>r.med},{h:'n',num:1,f:r=>r.n},{h:'Min',num:1,f:r=>fmt(r.min,2)},{h:'Median',num:1,f:r=>fmt(r.median,2)},{h:'Max',num:1,f:r=>fmt(r.max,2)},{h:'Unit',f:r=>esc(r.unit||'')},{h:'Last',f:r=>esc(r.last)}];
+    if(chem.length)html(c,'<b>Chemistry (RO-relevant)</b>'+table(chem.sort((x,y)=>y.n-x.n),col));
+    if(micro.length)html(c,'<b>Microbiology</b>'+table(micro.sort((x,y)=>y.n-x.n),col));
+    const tds=list.find(a=>a.name==='Total dissolved solids'),ec=list.find(a=>a.name==='Specific conductance');
+    const est=tds?tds.median:ec?ecToTDS(ec.median):null;const cl=classifyTDS(est);
+    if(cl)html(c,`<div><span class="pill ${cl.cls}">${esc(cl.l)}</span> median ${tds?'TDS':'TDS≈0.65×EC'} ${fmt(est,0)} mg/L across sampled sites</div>`);
+    src(c,'Water Quality Portal (USGS + EPA + states), last 15 years',ur);
+    cov('Water chemistry',chem.length?'ok':'none',chem.length?`${chem.length} parameters sampled`:'no chemistry results');
+    cov('Microbiology (E. coli etc.)',micro.length?'ok':'none',micro.length?`${micro.reduce((a,b)=>a+b.n,0)} results`:'no bacteriology sampled within radius');
+    return {tds:est,cl};
+  }catch(e){fail(c,e,'WQP');cov('Water chemistry','missing',e.message);return {};}
+}
+
+async function adEPAUtility(lat,lon){
+  const c=card('util','Water utility serving this point (EPA)');
+  try{
+    const u=`https://services.arcgis.com/cJ9YHowT8TU7DUyn/ArcGIS/rest/services/Water_System_Boundaries/FeatureServer/0/query?geometry=${lon},${lat}&geometryType=esriGeometryPoint&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=*&returnGeometry=false&f=json`;
+    const r=await getJSON(u);if(r.error)throw new Error(r.error.message);
+    const f=(r.features||[]).map(x=>x.attributes);
+    if(!f.length){setStatus(c,'no community water system','warn');html(c,'<div>No community water system service area covers this point — likely self-supplied (private wells, hauling, rain). That is itself a key feasibility finding.</div>');cov('Water utility / service area','none','outside any CWS boundary (EPA)');}
+    else{setStatus(c,`${f.length} system(s)`,'ok');
+      for(const a of f){const pws=a.PWSID||a.pwsid;
+        let sd=null;try{const rs=await getJSON(`https://data.epa.gov/efservice/WATER_SYSTEM/PWSID/${pws}/JSON`);sd=rs[0]||null;}catch(e){}
+        html(c,`<dl class="kv"><dt>System</dt><dd><b>${esc(a.PWS_NAME||a.pws_name||sd?.pws_name||pws)}</b> · ${esc(pws)}</dd><dt>Population served</dt><dd>${fmt(a.POPULATION_SERVED_COUNT||a.population_served_count||sd?.population_served_count,0)}</dd><dt>Primary source</dt><dd>${esc(sd?.primary_source_code||a.PRIMARY_SOURCE||'—')} ${esc(sd?.gw_sw_code?'('+sd.gw_sw_code+')':'')}</dd><dt>Ownership</dt><dd>${esc(sd?.owner_type_code||a.OWNER_TYPE||'—')}</dd><dt>Boundary source</dt><dd>${esc(a.METHOD||a.method||'—')}</dd><dt>City / state</dt><dd>${esc(a.CITY_SERVED||sd?.city_name||'')} ${esc(a.STATE||a.state||sd?.state_code||'')}</dd></dl>`);
+      }
+      html(c,'<div class="hint">Source-well and intake coordinates are withheld in SDWIS as critical infrastructure; wells shown on the map come from USGS/OSM instead.</div>');
+      cov('Water utility / service area','ok','EPA CWS service-area boundary + SDWIS');
+    }
+    src(c,'EPA Community Water System Service Area Boundaries v3; Envirofacts SDWIS',u);
+  }catch(e){fail(c,e,'EPA');cov('Water utility / service area','missing',e.message);}
+}
+
+async function adECHO(lat,lon,r){
+  const c=card('echo','Wastewater discharges & treatment plants (EPA ECHO)');
+  try{
+    const b=bbox(lat,lon,r);
+    const u=`https://echodata.epa.gov/echo/cwa_rest_services.get_facilities?output=JSON&p_c1lat=${b[1]}&p_c1lon=${b[0]}&p_c2lat=${b[3]}&p_c2lon=${b[2]}&p_ptype=POT,NON&responseset=200`;
+    const r1=await getJSON(u);const res=r1.Results||{};if(res.Error)throw new Error(res.Error.ErrorMessage||'ECHO error');
+    let fac=res.Facilities||[];
+    if(!fac.length&&res.QueryID){const r2=await getJSON(`https://echodata.epa.gov/echo/cwa_rest_services.get_qid?output=JSON&qid=${res.QueryID}&responseset=200`);fac=r2.Results?.Facilities||[];}
+    fac=fac.map(x=>({...x,d:km([lat,lon],[+x.FacLat,+x.FacLong])})).filter(x=>!isNaN(x.d)).sort((a,b)=>a.d-b.d);
+    const potw=fac.filter(x=>/POTW|Sewer|Wastewater|Treatment|4952/i.test([x.CWPFacilityTypeIndicator,x.CWPName,x.CWPSICCodes,x.CWPNAICSCodes].join(' ')));
+    for(const x of fac.slice(0,60))dot(+x.FacLat,+x.FacLong,'waste',`<b>${esc(x.CWPName)}</b><br>${esc(x.CWPPermitTypeDesc||'')} · ${esc(x.CWPFacilityTypeIndicator||'')}<br>${esc(x.CWPStatus||'')} · ${fmt(x.d,1)} km`);
+    setStatus(c,`${fac.length} NPDES permits · ${potw.length} POTW`,fac.length?'ok':'none');
+    html(c,table((potw.length?potw:fac).slice(0,15),[{h:'Facility',f:r=>esc(r.CWPName)},{h:'Type',f:r=>esc(r.CWPFacilityTypeIndicator||r.CWPPermitTypeDesc||'')},{h:'Flow MGD',num:1,f:r=>fmt(r.CWPTotalDesignFlowNmbr||r.CWPActualAverageFlowNmbr,2)},{h:'Status',f:r=>esc(r.CWPStatus||'')},{h:'km',num:1,f:r=>fmt(r.d,1)}]));
+    html(c,'<div class="hint">Treated effluent at 0.5–1.5 g/L TDS is a candidate BWRO feed when flow ≥ ~50% of community demand. Grey water is not mapped separately in the US (combined sewers).</div>');
+    src(c,'EPA ECHO CWA facility search (NPDES/ICIS)',u);
+    cov('Wastewater treatment (EPA)',potw.length?'ok':fac.length?'partial':'none',`${potw.length} POTW / ${fac.length} permits`);
+  }catch(e){fail(c,e,'ECHO');cov('Wastewater treatment (EPA)','missing',e.message);}
+}
+
+async function adHubeau(lat,lon,r){
+  const c=card('hubeau',"France & DOM: réseau d'eau potable, nappes, rivières (Hub'Eau)");
+  try{
+    const communes=await getJSON(`https://geo.api.gouv.fr/communes?lat=${lat}&lon=${lon}&fields=code,nom,population,codeDepartement`);
+    const com=communes[0];if(!com)throw new Error('no commune at this point');
+    html(c,`<dl class="kv"><dt>Commune</dt><dd><b>${esc(com.nom)}</b> (${esc(com.code)}) · ${fmt(com.population,0)} hab.</dd></dl>`);
+    // drinking water results
+    const ud=`https://hubeau.eaufrance.fr/api/v1/qualite_eau_potable/resultats_dis?code_commune=${com.code}&size=500&sort=desc`;
+    const rd=await getJSON(ud);const data=rd.data||[];
+    const keep=/escherichia|coliformes|entérocoques|conductivit|chlorures|sodium|sulfates|nitrates|dureté|fluorures|arsenic|turbidit|ph$|bore|fer|manganèse|calcium|magnésium|résidu sec|bromures|strontium|baryum|silice/i;
+    const agg={};const dist=new Set();
+    for(const x of data){if(x.nom_distributeur)dist.add(x.nom_distributeur);const n=x.libelle_parametre;if(!keep.test(n))continue;const v=x.resultat_numerique;if(v==null)continue;const a=agg[n]||(agg[n]={name:n,unit:x.libelle_unite,vals:[],last:'',conf:x.conclusion_conformite_prelevement});a.vals.push(+v);if((x.date_prelevement||'')>a.last)a.last=x.date_prelevement;}
+    const list=Object.values(agg).map(a=>{const s=[...a.vals].sort((x,y)=>x-y);return{...a,n:s.length,min:s[0],median:s[Math.floor(s.length/2)],max:s[s.length-1]};}).sort((a,b)=>b.n-a.n);
+    const micro=list.filter(a=>/escherichia|coliformes|entérocoques/i.test(a.name)),chem=list.filter(a=>!micro.includes(a));
+    if(dist.size)html(c,`<div><b>Distributeur:</b> ${[...dist].map(esc).join(', ')}</div>`);
+    const col=[{h:'Paramètre',f:r=>esc(r.name)},{h:'n',num:1,f:r=>r.n},{h:'Min',num:1,f:r=>fmt(r.min,2)},{h:'Médiane',num:1,f:r=>fmt(r.median,2)},{h:'Max',num:1,f:r=>fmt(r.max,2)},{h:'Unité',f:r=>esc(r.unit||'')},{h:'Dernier',f:r=>esc(String(r.last).slice(0,10))}];
+    if(chem.length)html(c,'<b>Eau distribuée — chimie</b>'+table(chem,col));
+    if(micro.length)html(c,'<b>Eau distribuée — microbiologie</b>'+table(micro,col));
+    const ec=list.find(a=>/conductivit/i.test(a.name));const cl=ec?classifyTDS(ecToTDS(ec.median)):null;
+    if(cl)html(c,`<div><span class="pill ${cl.cls}">${esc(cl.l)}</span> tap water TDS≈${fmt(ecToTDS(ec.median),0)} mg/L (from conductivity)</div>`);
+    cov('Water utility / service area',dist.size?'ok':'partial',dist.size?[...dist].join(', '):'commune found, no distributor named');
+    cov('Microbiology (E. coli etc.)',micro.length?'ok':'none',micro.length?`ARS tap-water surveillance, ${micro.reduce((a,b)=>a+b.n,0)} results`:'none');
+    cov('Water chemistry',chem.length?'ok':'none',`${chem.length} paramètres (eau distribuée)`);
+    // groundwater: piezometers + quality
+    const b=bbox(lat,lon,r).join(',');
+    try{const pz=await getJSON(`https://hubeau.eaufrance.fr/api/v1/niveaux_nappes/stations?bbox=${b}&size=200`);const st=(pz.data||[]).map(s=>({...s,d:km([lat,lon],[s.y,s.x])})).sort((a,b)=>a.d-b.d);
+      for(const s of st.slice(0,60))dot(s.y,s.x,'brackish',`<b>Piézomètre ${esc(s.code_bss)}</b><br>${esc(s.libelle_pe||'')}<br>${esc(s.nom_commune||'')} · ${fmt(s.d,1)} km`);
+      html(c,`<div><b>Piézomètres:</b> ${st.length} dans le rayon${st.length?' — '+st.slice(0,4).map(s=>`${esc(s.code_bss)} (${esc((s.libelle_pe||'').slice(0,40))}, ${fmt(s.d,1)} km)`).join('; '):''}</div>`);
+      cov('Groundwater level stations (ADES)',st.length?'ok':'none',`${st.length} piézomètres`);
+    }catch(e){html(c,`<div class="err">niveaux_nappes: ${esc(e.message)}</div>`);}
+    try{const qa=await getJSON(`https://hubeau.eaufrance.fr/api/v1/qualite_nappes/analyses?bbox=${b}&code_param=1303,1337,1340,1449,1335,1338&size=500&sort=desc`);const an=qa.data||[];const g={};
+      for(const x of an){const n=x.nom_param;const a=g[n]||(g[n]={name:n,unit:x.nom_unite,vals:[],last:'',sites:new Set()});a.vals.push(+x.resultat);a.sites.add(x.code_bss);if((x.date_debut_prelevement||'')>a.last)a.last=x.date_debut_prelevement;}
+      const gl=Object.values(g).map(a=>{const s=[...a.vals].sort((x,y)=>x-y);return{...a,n:s.length,min:s[0],median:s[Math.floor(s.length/2)],max:s[s.length-1]};});
+      if(gl.length)html(c,'<b>Nappes — qualité (ADES)</b>'+table(gl,[...col.slice(0,6),{h:'Sites',num:1,f:r=>r.sites.size}]));
+      const gec=gl.find(a=>/conductivit/i.test(a.name));if(gec){const gc=classifyTDS(ecToTDS(gec.median));html(c,`<div><span class="pill ${gc.cls}">${esc(gc.l)}</span> groundwater TDS≈${fmt(ecToTDS(gec.median),0)} mg/L (median EC across ${gec.sites.size} wells)</div>`);}
+      cov('Groundwater chemistry (ADES)',gl.length?'ok':'none',gl.length?`${an.length} analyses`:'none');
+    }catch(e){html(c,`<div class="err">qualite_nappes: ${esc(e.message)}</div>`);}
+    try{const hy=await getJSON(`https://hubeau.eaufrance.fr/api/v1/hydrometrie/referentiel/stations?bbox=${b}&size=100&en_service=true`);const hs=(hy.data||[]).map(s=>({...s,d:km([lat,lon],[s.latitude_station,s.longitude_station])})).sort((a,b)=>a.d-b.d);
+      for(const s of hs.slice(0,40))dot(s.latitude_station,s.longitude_station,'sea',`<b>Station hydro ${esc(s.code_station)}</b><br>${esc(s.libelle_station||'')}<br>${esc(s.libelle_cours_eau||'')} · ${fmt(s.d,1)} km`);
+      let obs='';if(hs[0]){try{const o=await getJSON(`https://hubeau.eaufrance.fr/api/v1/hydrometrie/observations_tr?code_entite=${hs[0].code_station}&grandeur_hydro=Q&size=1&sort=desc`);const v=o.data?.[0];if(v)obs=` — ${esc(hs[0].libelle_station)}: débit ${fmt(v.resultat_obs/1000,2)} m³/s (${esc(String(v.date_obs).slice(0,16))})`;}catch(e){}}
+      html(c,`<div><b>Stations hydrométriques:</b> ${hs.length}${obs}</div>`);
+      cov('River gauges (Hub\'Eau)',hs.length?'ok':'none',`${hs.length} stations en service`);
+    }catch(e){html(c,`<div class="err">hydrometrie: ${esc(e.message)}</div>`);}
+    setStatus(c,`${data.length} analyses eau potable`,data.length?'ok':'none');
+    src(c,"Hub'Eau (qualite_eau_potable, niveaux_nappes, qualite_nappes, hydrometrie) · geo.api.gouv.fr",ud);
+    return {tds:ec?ecToTDS(ec.median):null};
+  }catch(e){fail(c,e,"Hub'Eau");return {};}
+}
+
+function adFeedOptions(ctx){
+  const c=card('feed','Feed-water candidates & first-order sizing');
+  const Q=ctx.Q||0;const psh=ctx.solar?.worst||null;
+  const cands=[];
+  if(ctx.coast)cands.push({src:'Seawater (coastline within radius)',tds:35000,sec:4.5});
+  if(ctx.tds!=null){const t=ctx.tds;cands.push({src:'Local groundwater / surface (sampled median)',tds:t,sec:t<1000?0.6:t<3000?1.6:t<10000?2.8:t<30000?4:5});}
+  if(ctx.wells&&ctx.tds==null)cands.push({src:`Mapped wells (${ctx.wells}) — salinity unknown`,tds:null,sec:null});
+  if(ctx.wwtp)cands.push({src:'Treated wastewater (reuse)',tds:1000,sec:1.8});
+  if(!cands.length)cands.push({src:'No feed-water source identified in open data',tds:null,sec:null});
+  const rows=cands.map(k=>{const E=k.sec!=null&&Q?Q*k.sec:null;const pv=E&&psh?E/(psh*0.75):null;const cl=classifyTDS(k.tds);return{...k,E,pv,cl,batt:pv?Math.round(pv*0.8*1.5):null,gen:pv?Math.ceil(pv*0.8*1.25/5)*5:null,land:pv?Math.round(pv*7.5+Q*0.4+Q*2):null};});
+  setStatus(c,Q?`${fmt(Q,0)} m³/d`:'needs population','');
+  html(c,table(rows,[{h:'Feed',f:r=>esc(r.src)},{h:'TDS mg/L',num:1,f:r=>fmt(r.tds,0)},{h:'Class',f:r=>r.cl?`<span class="pill ${r.cl.cls}">${esc(r.cl.c)}</span>`:'?'},{h:'kWh/m³',num:1,f:r=>fmt(r.sec,1)},{h:'kWh/day',num:1,f:r=>fmt(r.E,0)},{h:'PV kWp',num:1,f:r=>fmt(r.pv,0)},{h:'Batt kWh',num:1,f:r=>fmt(r.batt,0)},{h:'Gen kVA',num:1,f:r=>fmt(r.gen,0)},{h:'Land m²',num:1,f:r=>fmt(r.land,0)}]));
+  html(c,`<div class="hint">Daytime-RO strategy: PV sized on worst-month GHI (${psh?fmt(psh,2):'?'} kWh/m²/d, PR 0.75); battery ≈ 1.5 h of RO load (water storage does the rest); standby genset ×1.25; land = PV 7.5 m²/kWp + plant 0.4 m²/(m³/d) + 2 days' storage. Inland brackish needs brine evaporation ponds (~60 m² per m³/d of plant) not included. Energy figures include intake and distribution; small-plant penalty not applied.</div>`);
+}
+
+function adCoverage(){
+  const c=card('cov','Coverage report — what open data does and does not say here');
+  const ok=coverage.filter(x=>x.state==='ok'),none=coverage.filter(x=>x.state!=='ok');
+  setStatus(c,`${ok.length} found · ${none.length} gaps`,none.length?'warn':'ok');
+  html(c,`<ul class="plain cov">${coverage.map(x=>`<li><span class="pill ${x.state==='ok'?'ok':x.state==='partial'?'warn':'bad'}">${esc(x.state)}</span> ${esc(x.topic)} <span class="hint">— ${esc(x.note)}</span></li>`).join('')}</ul>`);
+  const gaps=[];
+  if(!ok.some(x=>/Microbiology/.test(x.topic)))gaps.push('E. coli / coliform sampling at the proposed source and at points of use (quarterly for a year)');
+  if(!ok.some(x=>/chemistry|Chemistry/.test(x.topic)))gaps.push('Full RO feed-water analysis: TDS, major ions, silica, boron, hardness, turbidity/SDI, TOC');
+  if(!ok.some(x=>/Groundwater|wells|USGS/.test(x.topic)))gaps.push('Well inventory with depth, yield and conductivity; aquifer map from the national geological survey');
+  if(gaps.length)html(c,`<div><b>Minimum field campaign before sizing:</b><ul class="plain">${gaps.map(g=>`<li>${esc(g)}</li>`).join('')}</ul></div>`);
+  html(c,'<div class="hint">Not yet wired in v0 (planned for the backend): WorldPop/GHSL population, Thorslund global salinity points, IGRAC brackish-groundwater polygons, HydroWASTE, Copernicus Marine SSS/SST, GEBCO bathymetry, SIVICAP/SUI (Colombia), ANA/SISAGUA (Brazil), PDF ingestion for island reports.</div>');
+}
+
+// ---------- orchestrator ----------
+let running=false;
+async function scan(lat,lon){
+  if(running)return;running=true;
+  const r=Math.min(50,Math.max(1,+$('#radius').value||10));
+  layerGroup.clearLayers();if(marker)map.removeLayer(marker);if(circle)map.removeLayer(circle);
+  marker=L.marker([lat,lon]).addTo(map);circle=L.circle([lat,lon],{radius:r*1000,color:'#0f6f86',weight:1,fillOpacity:.04}).addTo(map);
+  dossier.innerHTML='';coverage=[];
+  try{
+    const loc=await adLocation(lat,lon);
+    const cc=loc.cc;
+    const [solar,osm]=await Promise.all([adSolar(lat,lon),adOSM(lat,lon,r)]);
+    await adRiverFlow(lat,lon);
+    const dem=adDemand(osm.places||[]);
+    const ctx={Q:dem.Q,solar,coast:osm.coast,wells:osm.wells,tds:null,wwtp:false};
+    if(cc==='US'||cc==='PR'||cc==='VI'||cc==='GU'||cc==='AS'||cc==='MP'){
+      const [u,w]=await Promise.all([adUSGS(lat,lon,r),adWQP(lat,lon,r)]);
+      ctx.tds=w.tds??null;ctx.wells+=u.filter(x=>/Well/i.test(x.site_type||'')).length;
+      await adEPAUtility(lat,lon);await adECHO(lat,lon,r);
+      ctx.wwtp=coverage.some(x=>/Wastewater treatment \(EPA\)/.test(x.topic)&&x.state==='ok');
+    }else if(['FR','GP','MQ','GF','RE','YT','BL','MF','PM'].includes(cc)){
+      const h=await adHubeau(lat,lon,r);ctx.tds=h.tds??null;
+      ctx.wwtp=coverage.some(x=>/Wastewater treatment \(OSM\)/.test(x.topic)&&x.state==='ok');
+    }else{
+      const c=card('nat','National monitoring networks');
+      setStatus(c,'no adapter yet','warn');
+      html(c,`<div>No national adapter wired for <b>${esc(loc.addr.country||cc||'this country')}</b> in v0. Global layers above (OSM, NASA POWER, GloFAS) still apply.${cc==='CO'?' Colombia sources to wire next: IDEAM/DHIME (datos.gov.co SODA), SIRH/FUNIAS wells, SIVICAP (INS, E. coli/IRCA by municipio), SUI providers, INVEMAR REDCAM coastal quality, SIASAR rural systems.':''}${cc==='BR'?' Brazil: ANA SNIRH geoservices, SISAGUA, SNIS, SIAGAS wells.':''}${cc==='GB'?' UK: Environment Agency hydrology, groundwater and bathing-water APIs.':''}${cc==='BS'?' Bahamas: WSC and BRGM/USGS reports (PDF ingestion); OSM wells shown above.':''}</div>`);
+      cov('National monitoring networks','none','no adapter for '+(cc||'country'));
+      ctx.wwtp=coverage.some(x=>/Wastewater treatment \(OSM\)/.test(x.topic)&&x.state==='ok');
+    }
+    adFeedOptions(ctx);
+    adCoverage();
+  }catch(e){const d=document.createElement('div');d.className='err';d.textContent='Scan failed: '+e.message;dossier.appendChild(d);}
+  running=false;
+}
+</script>
+</body>
+</html>
