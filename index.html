@@ -236,7 +236,7 @@ async function adOSM(lat,lon,r){
     setStatus(c,`${feats.length} features`,feats.length?'ok':'none');
     const summary=Object.entries(cnt).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`${esc(k)} ×${v}`).join(' · ');
     html(c,`<div>${coast?'<span class="pill info">Coastline within radius — seawater intake possible</span> ':''}${summary||'<span class="none">Nothing mapped within radius.</span>'}</div>`);
-    const infra=feats.filter(f=>f.cls!=='sea').slice(0,15);
+    const perKind={};const infra=feats.filter(f=>f.cls!=='sea').filter(f=>{perKind[f.kind]=(perKind[f.kind]||0)+1;return perKind[f.kind]<=4;}).slice(0,20);
     if(infra.length)html(c,table(infra,[{h:'Type',f:r=>esc(r.kind)},{h:'Name',f:r=>esc(r.name||'—')},{h:'km',num:1,f:r=>fmt(r.d,1)},{h:'Tags',f:r=>esc([r.tags.operator,r.tags.salinity&&('sal '+r.tags.salinity),r.tags.depth&&('depth '+r.tags.depth),r.tags.capacity&&('cap '+r.tags.capacity)].filter(Boolean).join(', '))}]));
     const named=feats.filter(f=>f.cls==='sea'&&f.name);const seen=new Set();const uniq=named.filter(f=>!seen.has(f.name)&&seen.add(f.name)).slice(0,10);
     if(uniq.length)html(c,`<div><b>Named water bodies:</b> ${uniq.map(f=>`${esc(f.name)} (${esc(f.kind.toLowerCase())}, ${fmt(f.d,1)} km)`).join('; ')}</div>`);
@@ -258,7 +258,7 @@ function adDemand(places){
   const lpcd=100;
   const Q=pop*lpcd*1.15/1000;
   setStatus(c,pop?`${fmt(pop,0)} people`:'enter population',pop?'ok':'warn');
-  html(c,`<dl class="kv"><dt>Population used</dt><dd><b>${pop?fmt(pop,0):'—'}</b> ${manual?'(entered)':pick?`(nearest OSM ${esc(pick.place)} ≤20k: ${esc(pick.name)}, ${fmt(pick.d,1)} km${small?'':' — only a city nearby; enter the community size above'})`:'(no OSM population tag nearby — enter it above)'}</dd><dt>Demand basis</dt><dd>${lpcd} L/person/day + 15% losses</dd><dt>Average demand</dt><dd><b>${fmt(Q,1)}</b> m³/day · design ${fmt(Q*1.3,0)} m³/day (peak ×1.3)</dd></dl>`);
+  html(c,`<dl class="kv"><dt>Population used</dt><dd><b>${pop?fmt(pop,0):'—'}</b> ${manual?'(entered)':pick?(small?`(nearest OSM ${esc(pick.place)}: ${esc(pick.name)}, ${fmt(pick.d,1)} km)`:`(nearest place is the city of ${esc(pick.name)}, ${fmt(pick.d,1)} km — for a community-scale plant enter its population above)`):'(no OSM population tag nearby — enter it above)'}</dd><dt>Demand basis</dt><dd>${lpcd} L/person/day + 15% losses</dd><dt>Average demand</dt><dd><b>${fmt(Q,1)}</b> m³/day · design ${fmt(Q*1.3,0)} m³/day (peak ×1.3)</dd></dl>`);
   if(near.length>1)html(c,`<div class="hint">Other places with population: ${near.filter(p=>p!==pick).map(p=>`${esc(p.name)} ${fmt(p.pop,0)} (${fmt(p.d,0)} km)`).join('; ')}</div>`);
   src(c,'OpenStreetMap place tags; WorldPop/GHSL in v1');
   return {pop,Q};
@@ -306,8 +306,9 @@ async function adWQP(lat,lon,r){
     for(const x of rows){const k=x.CharacteristicName;const v=parseFloat(x['ResultMeasureValue']);if(isNaN(v))continue;const med=/ground|well/i.test(x.ActivityMediaSubdivisionName||'')||/Well|Spring/i.test(x.MonitoringLocationTypeName||'')?'GW':'SW';const key=k+'|'+med;const a=agg[key]||(agg[key]={name:k,med,unit:x['ResultMeasure/MeasureUnitCode'],n:0,vals:[],last:'',sites:new Set()});a.n++;a.vals.push(v);if(x.ActivityStartDate>a.last)a.last=x.ActivityStartDate;a.sites.add(x.MonitoringLocationIdentifier);}
     const stat=a=>{const s=[...a.vals].sort((x,y)=>x-y);return{min:s[0],median:s[Math.floor(s.length/2)],max:s[s.length-1]};};
     const list=Object.values(agg).map(a=>({...a,...stat(a)}));
-    const chem=list.filter(a=>!MICRO.some(m=>a.name.toLowerCase().startsWith(m.toLowerCase().split(' ')[0])));
-    const micro=list.filter(a=>MICRO.some(m=>a.name.toLowerCase().startsWith(m.toLowerCase().split(' ')[0])));
+    const isMicro=n=>/coli|enterococ|fecal|streptococ/i.test(n);
+    const chem=list.filter(a=>!isMicro(a.name));
+    const micro=list.filter(a=>isMicro(a.name));
     setStatus(c,`${sf.length} stations · ${rows.length} results`,sf.length?'ok':'none');
     html(c,`<div>${Object.entries(types).map(([k,v])=>`${esc(k)} ×${v}`).join(' · ')||'<span class="none">No WQP stations within radius.</span>'}</div>`);
     const col=[{h:'Parameter',f:r=>esc(r.name)},{h:'Med',f:r=>r.med},{h:'n',num:1,f:r=>r.n},{h:'Min',num:1,f:r=>fmt(r.min,2)},{h:'Median',num:1,f:r=>fmt(r.median,2)},{h:'Max',num:1,f:r=>fmt(r.max,2)},{h:'Unit',f:r=>esc(r.unit||'')},{h:'Last',f:r=>esc(r.last)}];
