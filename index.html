@@ -253,12 +253,12 @@ function adDemand(places){
   const manual=+$('#pop').value||0;
   const near=places.filter(p=>p.pop>0).slice(0,5);
   const small=near.find(p=>p.pop<=20000);
-  const pick=small||near[0];
+  const pick=(near[0]&&near[0].d<=3)?near[0]:(small||near[0]);
   const pop=manual||(pick?pick.pop:0);
   const lpcd=100;
   const Q=pop*lpcd*1.15/1000;
   setStatus(c,pop?`${fmt(pop,0)} people`:'enter population',pop?'ok':'warn');
-  html(c,`<dl class="kv"><dt>Population used</dt><dd><b>${pop?fmt(pop,0):'—'}</b> ${manual?'(entered)':pick?(small?`(nearest OSM ${esc(pick.place)}: ${esc(pick.name)}, ${fmt(pick.d,1)} km)`:`(nearest place is the city of ${esc(pick.name)}, ${fmt(pick.d,1)} km — for a community-scale plant enter its population above)`):'(no OSM population tag nearby — enter it above)'}</dd><dt>Demand basis</dt><dd>${lpcd} L/person/day + 15% losses</dd><dt>Average demand</dt><dd><b>${fmt(Q,1)}</b> m³/day · design ${fmt(Q*1.3,0)} m³/day (peak ×1.3)</dd></dl>`);
+  html(c,`<dl class="kv"><dt>Population used</dt><dd><b>${pop?fmt(pop,0):'—'}</b> ${manual?'(entered)':pick?((pick===small||pick.pop<=20000)?`(nearest OSM ${esc(pick.place)}: ${esc(pick.name)}, ${fmt(pick.d,1)} km)`:`(nearest place is the city of ${esc(pick.name)}, ${fmt(pick.d,1)} km — for a community-scale plant enter its population above)`):'(no OSM population tag nearby — enter it above)'}</dd><dt>Demand basis</dt><dd>${lpcd} L/person/day + 15% losses</dd><dt>Average demand</dt><dd><b>${fmt(Q,1)}</b> m³/day · design ${fmt(Q*1.3,0)} m³/day (peak ×1.3)</dd></dl>`);
   if(near.length>1)html(c,`<div class="hint">Other places with population: ${near.filter(p=>p!==pick).map(p=>`${esc(p.name)} ${fmt(p.pop,0)} (${fmt(p.d,0)} km)`).join('; ')}</div>`);
   src(c,'OpenStreetMap place tags; WorldPop/GHSL in v1');
   return {pop,Q};
@@ -386,6 +386,7 @@ async function adHubeau(lat,lon,r){
     cov('Water utility / service area',dist.size?'ok':'partial',dist.size?[...dist].join(', '):'commune found, no distributor named');
     cov('Microbiology (E. coli etc.)',micro.length?'ok':'none',micro.length?`ARS tap-water surveillance, ${micro.reduce((a,b)=>a+b.n,0)} results`:'none');
     cov('Water chemistry',chem.length?'ok':'none',`${chem.length} paramètres (eau distribuée)`);
+    let gwTDS=null;
     // groundwater: piezometers + quality
     const b=bbox(lat,lon,r).join(',');
     try{const pz=await getJSON(`https://hubeau.eaufrance.fr/api/v1/niveaux_nappes/stations?bbox=${b}&size=200`);const st=(pz.data||[]).map(s=>({...s,d:km([lat,lon],[s.y,s.x])})).sort((a,b)=>a.d-b.d);
@@ -397,18 +398,18 @@ async function adHubeau(lat,lon,r){
       for(const x of an){const n=x.nom_param;const a=g[n]||(g[n]={name:n,unit:x.nom_unite,vals:[],last:'',sites:new Set()});a.vals.push(+x.resultat);a.sites.add(x.code_bss);if((x.date_debut_prelevement||'')>a.last)a.last=x.date_debut_prelevement;}
       const gl=Object.values(g).map(a=>{const s=[...a.vals].sort((x,y)=>x-y);return{...a,n:s.length,min:s[0],median:s[Math.floor(s.length/2)],max:s[s.length-1]};});
       if(gl.length)html(c,'<b>Nappes — qualité (ADES)</b>'+table(gl,[...col.slice(0,6),{h:'Sites',num:1,f:r=>r.sites.size}]));
-      const gec=gl.find(a=>/conductivit/i.test(a.name));if(gec){const gc=classifyTDS(ecToTDS(gec.median));html(c,`<div><span class="pill ${gc.cls}">${esc(gc.l)}</span> groundwater TDS≈${fmt(ecToTDS(gec.median),0)} mg/L (median EC across ${gec.sites.size} wells)</div>`);}
+      const gec=gl.find(a=>/conductivit/i.test(a.name));if(gec){gwTDS=ecToTDS(gec.median);const gc=classifyTDS(gwTDS);html(c,`<div><span class="pill ${gc.cls}">${esc(gc.l)}</span> groundwater TDS≈${fmt(ecToTDS(gec.median),0)} mg/L (median EC across ${gec.sites.size} wells)</div>`);}
       cov('Groundwater chemistry (ADES)',gl.length?'ok':'none',gl.length?`${an.length} analyses`:'none');
     }catch(e){html(c,`<div class="err">qualite_nappes: ${esc(e.message)}</div>`);}
-    try{const hy=await getJSON(`https://hubeau.eaufrance.fr/api/v1/hydrometrie/referentiel/stations?bbox=${b}&size=100&en_service=true`);const hs=(hy.data||[]).map(s=>({...s,d:km([lat,lon],[s.latitude_station,s.longitude_station])})).sort((a,b)=>a.d-b.d);
+    try{const hy=await getJSON(`https://hubeau.eaufrance.fr/api/v2/hydrometrie/referentiel/stations?bbox=${b}&size=100&en_service=true`);const hs=(hy.data||[]).map(s=>({...s,d:km([lat,lon],[s.latitude_station,s.longitude_station])})).sort((a,b)=>a.d-b.d);
       for(const s of hs.slice(0,40))dot(s.latitude_station,s.longitude_station,'sea',`<b>Station hydro ${esc(s.code_station)}</b><br>${esc(s.libelle_station||'')}<br>${esc(s.libelle_cours_eau||'')} · ${fmt(s.d,1)} km`);
-      let obs='';if(hs[0]){try{const o=await getJSON(`https://hubeau.eaufrance.fr/api/v1/hydrometrie/observations_tr?code_entite=${hs[0].code_station}&grandeur_hydro=Q&size=1&sort=desc`);const v=o.data?.[0];if(v)obs=` — ${esc(hs[0].libelle_station)}: débit ${fmt(v.resultat_obs/1000,2)} m³/s (${esc(String(v.date_obs).slice(0,16))})`;}catch(e){}}
+      let obs='';if(hs[0]){try{const o=await getJSON(`https://hubeau.eaufrance.fr/api/v2/hydrometrie/observations_tr?code_entite=${hs[0].code_station}&grandeur_hydro=Q&size=1&sort=desc`);const v=o.data?.[0];if(v)obs=` — ${esc(hs[0].libelle_station)}: débit ${fmt(v.resultat_obs/1000,2)} m³/s (${esc(String(v.date_obs).slice(0,16))})`;}catch(e){}}
       html(c,`<div><b>Stations hydrométriques:</b> ${hs.length}${obs}</div>`);
       cov('River gauges (Hub\'Eau)',hs.length?'ok':'none',`${hs.length} stations en service`);
     }catch(e){html(c,`<div class="err">hydrometrie: ${esc(e.message)}</div>`);}
     setStatus(c,`${data.length} analyses eau potable`,data.length?'ok':'none');
     src(c,"Hub'Eau (qualite_eau_potable, niveaux_nappes, qualite_nappes, hydrometrie) · geo.api.gouv.fr",ud);
-    return {tds:ec?ecToTDS(ec.median):null};
+    return {tds:gwTDS??(ec?ecToTDS(ec.median):null),tdsLabel:gwTDS!=null?'Groundwater (ADES median EC)':'Distributed tap water (median EC)'};
   }catch(e){fail(c,e,"Hub'Eau");return {};}
 }
 
@@ -417,7 +418,7 @@ function adFeedOptions(ctx){
   const Q=ctx.Q||0;const psh=ctx.solar?.worst||null;
   const cands=[];
   if(ctx.coast)cands.push({src:'Seawater (coastline within radius)',tds:35000,sec:4.5});
-  if(ctx.tds!=null){const t=ctx.tds;cands.push({src:'Local groundwater / surface (sampled median)',tds:t,sec:t<1000?0.6:t<3000?1.6:t<10000?2.8:t<30000?4:5});}
+  if(ctx.tds!=null){const t=ctx.tds;cands.push({src:ctx.tdsLabel||'Local groundwater / surface (sampled median)',tds:t,sec:t<1000?0.6:t<3000?1.6:t<10000?2.8:t<30000?4:5});}
   if(ctx.wells&&ctx.tds==null)cands.push({src:`Mapped wells (${ctx.wells}) — salinity unknown`,tds:null,sec:null});
   if(ctx.wwtp)cands.push({src:'Treated wastewater (reuse)',tds:1000,sec:1.8});
   if(!cands.length)cands.push({src:'No feed-water source identified in open data',tds:null,sec:null});
@@ -457,11 +458,11 @@ async function scan(lat,lon){
     const ctx={Q:dem.Q,solar,coast:osm.coast,wells:osm.wells,tds:null,wwtp:false};
     if(cc==='US'||cc==='PR'||cc==='VI'||cc==='GU'||cc==='AS'||cc==='MP'){
       const [u,w]=await Promise.all([adUSGS(lat,lon,r),adWQP(lat,lon,r)]);
-      ctx.tds=w.tds??null;ctx.wells+=u.filter(x=>/Well/i.test(x.site_type||'')).length;
+      ctx.tds=w.tds??null;ctx.tdsLabel='Local water (WQP sampled median)';ctx.wells+=u.filter(x=>/Well/i.test(x.site_type||'')).length;
       await adEPAUtility(lat,lon);await adECHO(lat,lon,r);
       ctx.wwtp=coverage.some(x=>/Wastewater treatment \(EPA\)/.test(x.topic)&&x.state==='ok');
     }else if(['FR','GP','MQ','GF','RE','YT','BL','MF','PM'].includes(cc)){
-      const h=await adHubeau(lat,lon,r);ctx.tds=h.tds??null;
+      const h=await adHubeau(lat,lon,r);ctx.tds=h.tds??null;ctx.tdsLabel=h.tdsLabel;
       ctx.wwtp=coverage.some(x=>/Wastewater treatment \(OSM\)/.test(x.topic)&&x.state==='ok');
     }else{
       const c=card('nat','National monitoring networks');
