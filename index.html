@@ -948,8 +948,8 @@ async function adGrid(lat,lon,r,cc,loc){
   const tasks=[];
   // 1. OpenStreetMap power infrastructure (global)
   tasks.push((async()=>{
-    const q=`[out:json][timeout:90];(way(around:${R},${lat},${lon})["power"~"^(line|minor_line|cable)$"];nwr(around:${R},${lat},${lon})["power"~"^(substation|plant)$"];node(around:${R},${lat},${lon})["power"="generator"]["generator:source"]["generator:output:electricity"];);out tags geom 600;`;
-    const r2=await overpass(q);
+    const q=`[out:json][timeout:90];(way(around:${R},${lat},${lon})["power"~"^(line|minor_line|cable)$"];nwr(around:${R},${lat},${lon})["power"~"^(substation|plant)$"];node(around:${R},${lat},${lon})["power"="generator"]["generator:source"]["generator:output:electricity"];);out tags geom 500;`;
+    const r2=await overpass(q,80000);
     for(const e of r2.elements||[]){const t=e.tags||{};
       if(/^(line|minor_line|cable)$/.test(t.power)&&e.geometry){const co=e.geometry.map(p=>[p.lat,p.lon]);const kv=voltKV(t.voltage);const d=distToPath([lat,lon],co);g.lines.push({kv,d,co,name:t.name||'',op:t.operator||'',kind:t.power});}
       else if(t.power==='substation'){const la=e.lat??e.center?.lat??(e.geometry&&e.geometry[0]?.lat),lo=e.lon??e.center?.lon??(e.geometry&&e.geometry[0]?.lon);if(la==null)continue;g.subs.push({name:t.name||'Substation',kv:voltKV(t.voltage),op:t.operator||'',d:km([lat,lon],[la,lo]),la,lo,sub:t.substation||''});}
@@ -976,7 +976,7 @@ async function adGrid(lat,lon,r,cc,loc){
     const mp=(loc.addr&&(loc.addr.city||loc.addr.town||loc.addr.municipality||loc.addr.county||loc.addr.village))||'';if(!mp)return;
     const key=mp.toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^A-Z ]/g,'').trim().split(' ')[0];if(!key||key.length<3)return;
     const rows=await getJSON(`https://www.datos.gov.co/resource/3ebi-d83g.json?$where=upper(mpio) like '%25${encodeURIComponent(key)}%25'&$order=anio DESC,mes DESC&$limit=400`,{timeout:40000});
-    if(!rows.length)return;const by={};for(const x of rows){if(!by[x.localidad])by[x.localidad]={loc:x.localidad,mpio:x.mpio,dpto:x.dpto,h:+x.prom_diario_horas,kw:+x.potencia_maxima,kwh:+x.energia_activa,y:x.anio,m:x.mes};}
+    if(!rows.length)return;const by={};for(const x of rows){const h=+x.prom_diario_horas;if(!(h>0&&h<=24))continue;const k=String(x.localidad||'').replace(/\s*\(.*$/,'').trim().toUpperCase();if(!k||by[k])continue;by[k]={loc:k,mpio:x.mpio,dpto:x.dpto,h,kw:+x.potencia_maxima,kwh:+x.energia_activa,y:x.anio,m:x.mes};}
     const list=Object.values(by);g.zni={n:list.length,list,hMed:list.map(x=>x.h).sort((a,b)=>a-b)[Math.floor(list.length/2)],mpio:list[0].mpio,y:list[0].y,m:list[0].m};
   })().catch(e=>html(c,`<div class="hint">IPSE ZNI: ${esc(e.message)}</div>`)));}
   // 4. World Bank national indicators
@@ -988,7 +988,7 @@ async function adGrid(lat,lon,r,cc,loc){
   const dl=g.hifld?.nearest?Math.min(g.hifld.nearest.d,g.nearestLine?.d??Infinity):g.nearestLine?.d;
   const kv=g.hifld?.nearest?.kv??g.nearestLine?.kv;
   let cls,label;
-  if(g.zni){cls='zni';label=`Non-interconnected zone (ZNI): ${fmt(g.zni.hMed,1)} h/day of service`;}
+  if(g.zni&&!(dl!=null&&dl<=5)){cls='zni';label=`Non-interconnected zone (ZNI): ${fmt(g.zni.hMed,1)} h/day of service`;}
   else if(dl==null){cls='none';label=`No power line mapped within ${Math.round(R/1000)} km — treat as off-grid`;}
   else if(dl<=2){cls='near';label=`Grid line ${fmt(dl,1)} km away${kv?' ('+fmt(kv,0)+' kV)':''}`;}
   else if(dl<=10){cls='mid';label=`Nearest mapped line ${fmt(dl,1)} km${kv?' ('+fmt(kv,0)+' kV)':''} — extension needed`;}
@@ -999,7 +999,7 @@ async function adGrid(lat,lon,r,cc,loc){
   setStatus(c,label,cls==='near'?'ok':cls==='none'||cls==='far'||cls==='zni'?'warn':'');
   cov('Electricity grid proximity (OSM/HIFLD)',dl!=null?'ok':'none',dl!=null?`nearest line ${fmt(dl,1)} km`:'no power line mapped nearby');
   if(g.util)html(c,`<div><b>Utility territory (HIFLD):</b> ${esc(g.util.name)} — ${esc(g.util.type||'')}${g.util.hold?', '+esc(g.util.hold):''}${g.util.cust?' · '+fmt(g.util.cust,0)+' customers':''}${g.util.ca?' · control area '+esc(g.util.ca):''}</div>`);
-  if(g.zni)html(c,`<div><b>IPSE — Zonas No Interconectadas, ${esc(g.zni.mpio)}</b> (${g.zni.y}-${g.zni.m}): ${g.zni.n} localities tracked, median <b>${fmt(g.zni.hMed,1)} h/day</b>.</div>`+table(g.zni.list.slice(0,12),[{h:'Locality',f:x=>esc(x.loc)},{h:'h/day',num:1,f:x=>fmt(x.h,1)},{h:'Peak kW',num:1,f:x=>fmt(x.kw,0)},{h:'kWh/month',num:1,f:x=>fmt(x.kwh,0)}]));
+  if(g.zni)html(c,`<div><b>IPSE — Zonas No Interconectadas, ${esc(g.zni.mpio)}</b> (${g.zni.y}-${g.zni.m}): ${g.zni.n} localities tracked, median <b>${fmt(g.zni.hMed,1)} h/day</b>.${cls!=='zni'?' <span class="hint">This point is near a mapped grid line, so these apply to the outlying localities, not necessarily here.</span>':''}</div>`+table(g.zni.list.slice(0,12),[{h:'Locality',f:x=>esc(x.loc)},{h:'h/day',num:1,f:x=>fmt(x.h,1)},{h:'Peak kW',num:1,f:x=>fmt(x.kw,0)},{h:'kWh/month',num:1,f:x=>fmt(x.kwh,0)}]));
   if(g.lines.length||g.hifld)html(c,`<div><b>Lines:</b> ${g.lines.length} OSM segments${g.hifld?` · ${g.hifld.n} HIFLD transmission lines`:''} within ${Math.round(R/1000)} km. ${g.nearestLine?`Nearest OSM: ${esc(g.nearestLine.name||g.nearestLine.kind)} ${g.nearestLine.kv?fmt(g.nearestLine.kv,0)+' kV ':''}at ${fmt(g.nearestLine.d,1)} km${g.nearestLine.op?' ('+esc(g.nearestLine.op)+')':''}.`:''}${g.hifld?.nearest?` Nearest HIFLD: ${fmt(g.hifld.nearest.kv,0)} kV ${esc(g.hifld.nearest.op)} at ${fmt(g.hifld.nearest.d,1)} km.`:''}</div>`);
   if(g.subs.length)html(c,'<b>Substations (OSM)</b>'+table(g.subs.slice(0,6),[{h:'Name',f:x=>esc(x.name)},{h:'kV',num:1,f:x=>fmt(x.kv,0)},{h:'Operator',f:x=>esc(x.op)},{h:'km',num:1,f:x=>fmt(x.d,1)}]));
   if(g.plants.length)html(c,'<b>Power plants / generators (OSM)</b>'+table(g.plants.slice(0,8),[{h:'Name',f:x=>esc(x.name)},{h:'Source',f:x=>esc(x.src)},{h:'MW',num:1,f:x=>fmt(x.mw,1)},{h:'Operator',f:x=>esc(x.op)},{h:'km',num:1,f:x=>fmt(x.d,1)}]));
@@ -1118,7 +1118,7 @@ async function scan(lat,lon){
     const solar=await adSolar(lat,lon);
     await adRiverFlow(lat,lon);
     const natP=runNational(cc,lat,lon,r,loc);
-    const gridP=adGrid(lat,lon,r,cc,loc).catch(e=>({cls:'none',label:'grid lookup failed: '+e.message,rel:null}));
+    const gridP=osmP.catch(()=>{}).then(()=>adGrid(lat,lon,r,cc,loc)).catch(e=>({cls:'none',label:'grid lookup failed: '+e.message,rel:null}));
     const osm=await osmP;
     let wp=null; // WorldPop API is not callable from a browser page (CORS); backend item
     const dem=adDemand(osm.places||[],wp);
