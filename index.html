@@ -134,7 +134,8 @@ const colors={sea:'#2c5e8a',brackish:'#4f8a8b',fresh:'#2f8f5b',waste:'#7a5a3a'};
 function dot(lat,lon,kind,label){L.circleMarker([lat,lon],{radius:6,color:colors[kind],fillColor:colors[kind],fillOpacity:.8,weight:1}).bindPopup(label).addTo(layerGroup);}
 map.on('click',e=>scan(e.latlng.lat,e.latlng.lng));
 $('#go').addEventListener('click',async()=>{const q=$('#q').value.trim();if(!q)return;const m=q.match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);if(m){map.setView([+m[1],+m[2]],11);return scan(+m[1],+m[2]);}try{const r=await getJSON('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+encodeURIComponent(q));if(r[0]){map.setView([+r[0].lat,+r[0].lon],11);scan(+r[0].lat,+r[0].lon);}else alert('Place not found');}catch(e){alert('Geocoder error: '+e.message);}});
-$('#q').addEventListener('keydown',e=>{if(e.key==='Enter')$('#go').click();});
+$('#q').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('#go').click();}});
+$('#pop').addEventListener('keydown',e=>{if(e.key==='Enter'&&marker){const p=marker.getLatLng();scan(p.lat,p.lng);}});
 
 // ---------- dossier rendering ----------
 const dossier=$('#dossier');
@@ -200,7 +201,7 @@ async function adRiverFlow(lat,lon){
 async function adOSM(lat,lon,r){
   const c=card('osm','Water bodies & infrastructure (OpenStreetMap)');
   const rm=r*1000;
-  const q=`[out:json][timeout:40];(
+  const q=`[out:json][timeout:90];(
     nwr(around:${rm},${lat},${lon})["natural"="water"];
     nwr(around:${rm},${lat},${lon})["waterway"~"^(river|stream|canal)$"];
     nwr(around:${rm},${lat},${lon})["natural"="coastline"];
@@ -210,7 +211,7 @@ async function adOSM(lat,lon,r){
     node(around:${rm*2},${lat},${lon})["place"~"^(city|town|village|hamlet)$"]["population"];
   );out tags center 400;`;
   try{
-    const r2=await getJSON('https://overpass-api.de/api/interpreter?data='+encodeURIComponent(q),{timeout:60000});
+    const r2=await getJSON('https://overpass-api.de/api/interpreter?data='+encodeURIComponent(q),{timeout:100000});
     const el=r2.elements||[];const cnt={};const feats=[];let coast=false;const places=[];
     for(const e of el){const t=e.tags||{};const la=e.lat??e.center?.lat,lo=e.lon??e.center?.lon;
       if(t.natural==='coastline'){coast=true;continue;}
@@ -251,12 +252,14 @@ function adDemand(places){
   const c=card('demand','Community & demand');
   const manual=+$('#pop').value||0;
   const near=places.filter(p=>p.pop>0).slice(0,5);
-  const pop=manual||(near[0]?near[0].pop:0);
+  const small=near.find(p=>p.pop<=20000);
+  const pick=small||near[0];
+  const pop=manual||(pick?pick.pop:0);
   const lpcd=100;
   const Q=pop*lpcd*1.15/1000;
   setStatus(c,pop?`${fmt(pop,0)} people`:'enter population',pop?'ok':'warn');
-  html(c,`<dl class="kv"><dt>Population used</dt><dd><b>${pop?fmt(pop,0):'—'}</b> ${manual?'(entered)':near[0]?`(nearest OSM place: ${esc(near[0].name)}, ${fmt(near[0].d,1)} km)`:'(no OSM population tag nearby — enter it above)'}</dd><dt>Demand basis</dt><dd>${lpcd} L/person/day + 15% losses</dd><dt>Average demand</dt><dd><b>${fmt(Q,1)}</b> m³/day · design ${fmt(Q*1.3,0)} m³/day (peak ×1.3)</dd></dl>`);
-  if(near.length>1)html(c,`<div class="hint">Other places with population: ${near.slice(1).map(p=>`${esc(p.name)} ${fmt(p.pop,0)} (${fmt(p.d,0)} km)`).join('; ')}</div>`);
+  html(c,`<dl class="kv"><dt>Population used</dt><dd><b>${pop?fmt(pop,0):'—'}</b> ${manual?'(entered)':pick?`(nearest OSM ${esc(pick.place)} ≤20k: ${esc(pick.name)}, ${fmt(pick.d,1)} km${small?'':' — only a city nearby; enter the community size above'})`:'(no OSM population tag nearby — enter it above)'}</dd><dt>Demand basis</dt><dd>${lpcd} L/person/day + 15% losses</dd><dt>Average demand</dt><dd><b>${fmt(Q,1)}</b> m³/day · design ${fmt(Q*1.3,0)} m³/day (peak ×1.3)</dd></dl>`);
+  if(near.length>1)html(c,`<div class="hint">Other places with population: ${near.filter(p=>p!==pick).map(p=>`${esc(p.name)} ${fmt(p.pop,0)} (${fmt(p.d,0)} km)`).join('; ')}</div>`);
   src(c,'OpenStreetMap place tags; WorldPop/GHSL in v1');
   return {pop,Q};
 }
@@ -293,10 +296,12 @@ async function adWQP(lat,lon,r){
     const types={};for(const x of sf){const t=x.ResolvedMonitoringLocationTypeName||x.MonitoringLocationTypeName||'?';types[t]=(types[t]||0)+1;}
     for(const x of sf.slice(0,120))dot(x.la,x.lo,/Well|Spring|Subsurface/i.test(x.MonitoringLocationTypeName||'')?'brackish':'sea',`<b>${esc(x.MonitoringLocationName||x.MonitoringLocationIdentifier)}</b><br>${esc(x.MonitoringLocationTypeName||'')}<br>${x.resultCount||0} results`);
     const since=new Date();since.setFullYear(since.getFullYear()-15);const sd=`${String(since.getMonth()+1).padStart(2,'0')}-${String(since.getDate()).padStart(2,'0')}-${since.getFullYear()}`;
-    const chars=[...RO_PARAMS,...MICRO].map(x=>'characteristicName='+encodeURIComponent(x)).join('&');
-    const ur=`https://www.waterqualitydata.us/data/Result/search?lat=${lat}&long=${lon}&within=${mi}&startDateLo=${sd}&${chars}&sampleMedia=Water&mimeType=csv&zip=no&dataProfile=resultPhysChem`;
+    const types_=['Inorganics, Major, Metals','Inorganics, Major, Non-metals','Inorganics, Minor, Metals','Inorganics, Minor, Non-metals','Microbiological','Nutrient','Physical'].map(x=>'characteristicType='+encodeURIComponent(x)).join('&');
+    const rmi=Math.min(+mi,6.3).toFixed(1);
+    const ur=`https://www.waterqualitydata.us/data/Result/search?lat=${lat}&long=${lon}&within=${rmi}&startDateLo=${sd}&${types_}&sampleMedia=Water&mimeType=csv&zip=no&dataProfile=resultPhysChem`;
     let rows=[];
-    try{const txt=await getJSON(ur,{text:true,timeout:90000});rows=parseCSV(txt);}catch(e){html(c,`<div class="err">Result query: ${esc(e.message)} (station list still shown)</div>`);}
+    const WANT=new Set([...RO_PARAMS,...MICRO].map(x=>x.toLowerCase()));
+    try{const txt=await getJSON(ur,{text:true,timeout:120000});rows=parseCSV(txt).filter(x=>{const n=(x.CharacteristicName||'').toLowerCase();return WANT.has(n)||/coli|enterococ/.test(n);});}catch(e){html(c,`<div class="err">Result query: ${esc(e.message)} (station list still shown)</div>`);}
     const agg={};
     for(const x of rows){const k=x.CharacteristicName;const v=parseFloat(x['ResultMeasureValue']);if(isNaN(v))continue;const med=/ground|well/i.test(x.ActivityMediaSubdivisionName||'')||/Well|Spring/i.test(x.MonitoringLocationTypeName||'')?'GW':'SW';const key=k+'|'+med;const a=agg[key]||(agg[key]={name:k,med,unit:x['ResultMeasure/MeasureUnitCode'],n:0,vals:[],last:'',sites:new Set()});a.n++;a.vals.push(v);if(x.ActivityStartDate>a.last)a.last=x.ActivityStartDate;a.sites.add(x.MonitoringLocationIdentifier);}
     const stat=a=>{const s=[...a.vals].sort((x,y)=>x-y);return{min:s[0],median:s[Math.floor(s.length/2)],max:s[s.length-1]};};
@@ -341,15 +346,16 @@ async function adECHO(lat,lon,r){
   const c=card('echo','Wastewater discharges & treatment plants (EPA ECHO)');
   try{
     const b=bbox(lat,lon,r);
-    const u=`https://echodata.epa.gov/echo/cwa_rest_services.get_facilities?output=JSON&p_c1lat=${b[1]}&p_c1lon=${b[0]}&p_c2lat=${b[3]}&p_c2lon=${b[2]}&p_ptype=POT,NON&responseset=200`;
+    const u=`https://echodata.epa.gov/echo/cwa_rest_services.get_facilities?output=JSON&p_c1lat=${b[1]}&p_c1lon=${b[0]}&p_c2lat=${b[3]}&p_c2lon=${b[2]}&responseset=1`;
     const r1=await getJSON(u);const res=r1.Results||{};if(res.Error)throw new Error(res.Error.ErrorMessage||'ECHO error');
-    let fac=res.Facilities||[];
-    if(!fac.length&&res.QueryID){const r2=await getJSON(`https://echodata.epa.gov/echo/cwa_rest_services.get_qid?output=JSON&qid=${res.QueryID}&responseset=200`);fac=r2.Results?.Facilities||[];}
-    fac=fac.map(x=>({...x,d:km([lat,lon],[+x.FacLat,+x.FacLong])})).filter(x=>!isNaN(x.d)).sort((a,b)=>a.d-b.d);
-    const potw=fac.filter(x=>/POTW|Sewer|Wastewater|Treatment|4952/i.test([x.CWPFacilityTypeIndicator,x.CWPName,x.CWPSICCodes,x.CWPNAICSCodes].join(' ')));
-    for(const x of fac.slice(0,60))dot(+x.FacLat,+x.FacLong,'waste',`<b>${esc(x.CWPName)}</b><br>${esc(x.CWPPermitTypeDesc||'')} · ${esc(x.CWPFacilityTypeIndicator||'')}<br>${esc(x.CWPStatus||'')} · ${fmt(x.d,1)} km`);
-    setStatus(c,`${fac.length} NPDES permits · ${potw.length} POTW`,fac.length?'ok':'none');
-    html(c,table((potw.length?potw:fac).slice(0,15),[{h:'Facility',f:r=>esc(r.CWPName)},{h:'Type',f:r=>esc(r.CWPFacilityTypeIndicator||r.CWPPermitTypeDesc||'')},{h:'Flow MGD',num:1,f:r=>fmt(r.CWPTotalDesignFlowNmbr||r.CWPActualAverageFlowNmbr,2)},{h:'Status',f:r=>esc(r.CWPStatus||'')},{h:'km',num:1,f:r=>fmt(r.d,1)}]));
+    const total=+res.QueryRows||0;let fac=[];
+    if(res.QueryID&&total){const g=await getJSON(`https://echodata.epa.gov/echo/cwa_rest_services.get_geojson?output=GEOJSON&qid=${res.QueryID}&responseset=500`);fac=(g.features||[]).filter(f=>f.geometry&&f.geometry.coordinates).map(f=>({...f.properties,la:f.geometry.coordinates[1],lo:f.geometry.coordinates[0]}));}
+    fac=fac.map(x=>({...x,d:km([lat,lon],[x.la,x.lo])})).filter(x=>x.d<=r).sort((a,b)=>a.d-b.d);
+    const potw=fac.filter(x=>x.CWPFacilityTypeIndicator==='POTW'||/WASTEWATER|WWTP|WWTF|SEWAGE|TREATMENT PLANT|WATER RECLAMATION|WRF|WPCF|WPCP|SANITATION DIST|LAGOON/i.test(x.CWPName||''));
+    for(const x of potw.slice(0,60))dot(x.la,x.lo,'waste',`<b>${esc(x.CWPName)}</b><br>${esc(x.CWPFacilityTypeIndicator||'')} · ${esc(x.SourceID||'')}<br>${esc(x.CWPCity||'')} · ${fmt(x.d,1)} km`);
+    setStatus(c,`${potw.length} treatment plants · ${fac.length} NPDES permits`,potw.length?'ok':fac.length?'warn':'none');
+    html(c,`<div>${total} Clean Water Act permits in the box (${fac.length} within ${r} km), mostly stormwater/construction; treatment-plant candidates below. Design flow and effluent quality come from ICIS DMR data in v1.</div>`);
+    html(c,table(potw.slice(0,15),[{h:'Facility',f:r=>esc(r.CWPName)},{h:'Type',f:r=>esc(r.CWPFacilityTypeIndicator||'')},{h:'Permit',f:r=>esc(r.SourceID||'')},{h:'City',f:r=>esc(r.CWPCity||'')},{h:'km',num:1,f:r=>fmt(r.d,1)}]));
     html(c,'<div class="hint">Treated effluent at 0.5–1.5 g/L TDS is a candidate BWRO feed when flow ≥ ~50% of community demand. Grey water is not mapped separately in the US (combined sewers).</div>');
     src(c,'EPA ECHO CWA facility search (NPDES/ICIS)',u);
     cov('Wastewater treatment (EPA)',potw.length?'ok':fac.length?'partial':'none',`${potw.length} POTW / ${fac.length} permits`);
