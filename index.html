@@ -80,6 +80,32 @@ ul.plain{margin:0;padding-left:18px}
   #app{grid-template-columns:1fr;grid-template-rows:46vh 1fr}
   #side{border-left:0;border-top:1px solid var(--line)}
 }
+
+/* dossier structure */
+.grp{display:flex;flex-direction:column;gap:8px}
+.grp>h3{margin:14px 0 0;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600;display:flex;align-items:center;gap:8px}
+.grp>h3::after{content:"";flex:1;height:1px;background:var(--line)}
+section.card>h2{cursor:pointer;user-select:none}
+section.card>h2>span:first-child::before{content:"▾";display:inline-block;width:12px;color:var(--muted);transition:transform .15s}
+section.card.closed>h2>span:first-child::before{transform:rotate(-90deg)}
+section.card.closed>.body{display:none}
+.brief{border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--panel);display:flex;flex-direction:column;gap:10px}
+.brief .place{font-size:15px;font-weight:600;line-height:1.3}
+.brief .sub{color:var(--muted);font-size:12px;font-family:var(--mono)}
+.kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.kpi>div{border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0;display:flex;flex-direction:column;gap:2px}
+.kpi .l{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.kpi .v{font-size:18px;font-weight:600;line-height:1.1;font-variant-numeric:tabular-nums}
+.kpi .v small{font-size:11px;font-weight:400;color:var(--muted);margin-left:3px}
+.kpi .n{font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kpi>div.ok{border-left:3px solid var(--good)} .kpi>div.warn{border-left:3px solid var(--warn)} .kpi>div.bad{border-left:3px solid var(--bad)} .kpi>div.info{border-left:3px solid var(--info)}
+.verdict{font-size:13px;line-height:1.5;border-top:1px solid var(--line);padding-top:8px}
+.dotc{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle;background:var(--muted)}
+.dotc.ok{background:var(--good)} .dotc.warn{background:var(--warn)} .dotc.bad{background:var(--bad)}
+.progress{display:flex;gap:4px;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--muted);font-family:var(--mono)}
+.progress i{display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--line)}
+.progress i.done{background:var(--good)} .progress i.err{background:var(--bad)} .progress i.run{background:var(--accent);animation:pulse 1.2s infinite}
+@media (max-width:480px){.kpi{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
 <body>
@@ -140,13 +166,39 @@ $('#pop').addEventListener('keydown',e=>{if(e.key==='Enter'&&marker){const p=mar
 // ---------- dossier rendering ----------
 const dossier=$('#dossier');
 const cards={};
-function card(id,title){const s=document.createElement('section');s.className='card';s.id='c-'+id;s.innerHTML=`<h2><span>${esc(title)}</span><span class="st busy">querying…</span></h2><div class="body"></div>`;dossier.appendChild(s);cards[id]={el:s,body:s.querySelector('.body'),st:s.querySelector('.st')};return cards[id];}
-function setStatus(c,txt,cls){c.st.textContent=txt;c.st.className='st '+(cls||'');}
+const GROUPS=[['site','Site'],['sources','Water sources & quantity'],['quality','Water quality'],['system','Existing water system'],['energy','Solar & plant sizing'],['coverage','Data coverage']];
+const groupEl={};let progressEl=null,progressItems={};
+function scaffold(){dossier.innerHTML='';progressEl=document.createElement('div');progressEl.className='progress';dossier.appendChild(progressEl);progressItems={};for(const [id,label] of GROUPS){const g=document.createElement('div');g.className='grp';g.id='g-'+id;g.hidden=true;g.innerHTML=`<h3>${esc(label)}</h3>`;dossier.appendChild(g);groupEl[id]=g;}}
+function progress(id,state){if(!progressEl)return;let it=progressItems[id];if(!it){it=document.createElement('i');it.title=id;progressEl.appendChild(it);progressItems[id]=it;}it.className=state;const n=Object.values(progressItems),d=n.filter(x=>x.className!=='run').length;let t=progressEl.querySelector('span');if(!t){t=document.createElement('span');progressEl.prepend(t);}t.textContent=d<n.length?`scanning ${d}/${n.length} sources`:`${n.length} sources queried`;}
+function card(id,title,group='sources',opts={}){const g=groupEl[group]||dossier;if(g.hidden!==undefined)g.hidden=false;const s=document.createElement('section');s.className='card'+(opts.closed?' closed':'');s.id='c-'+id;s.innerHTML=`<h2><span>${esc(title)}</span><span class="st busy">querying…</span></h2><div class="body"></div>`;s.querySelector('h2').addEventListener('click',()=>s.classList.toggle('closed'));g.appendChild(s);progress(id,'run');cards[id]={el:s,body:s.querySelector('.body'),st:s.querySelector('.st'),id};return cards[id];}
+function setStatus(c,txt,cls){c.st.textContent=txt;c.st.className='st '+(cls||'');progress(c.id,cls==='bad'?'err':'done');}
 function src(c,label,url){const p=document.createElement('div');p.className='src';p.innerHTML=url?`Source: <a href="${esc(url)}" target="_blank" rel="noopener">${esc(label)}</a>`:'Source: '+esc(label);c.body.appendChild(p);}
 function html(c,h){const d=document.createElement('div');d.innerHTML=h;c.body.appendChild(d);}
-function fail(c,e,label){setStatus(c,'error','bad');html(c,`<div class="err">${esc(label||'')} ${esc(e.message||e)}</div>`);}
+function fail(c,e,label){setStatus(c,'error','bad');c.el.classList.remove('closed');html(c,`<div class="err">${esc(label||'')} ${esc(e.message||e)}</div>`);}
 function table(rows,cols){if(!rows.length)return '<div class="none">none</div>';return `<div class="tbl"><table><thead><tr>${cols.map(x=>`<th class="${x.num?'num':''}">${esc(x.h)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(x=>`<td class="${x.num?'num':''}">${x.f(r)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;}
 
+
+// drinking-water / RO guideline flags (WHO GDWQ 4th ed. + RO practice); returns ok/warn/bad/''
+function flagVal(name,v,unit){if(v==null||isNaN(v))return '';const n=name.toLowerCase();const u=(unit||'').toLowerCase();const mg=u.includes('ug')||u.includes('µg')?v/1000:v;
+  if(/coli|enterococ|fecal/.test(n))return v>0?'bad':'ok';
+  if(/dissolved solids|résidu sec/.test(n))return mg<1000?'ok':mg<3000?'warn':'bad';
+  if(/conductiv/.test(n)){const t=ecToTDS(v);return t<1000?'ok':t<3000?'warn':'bad';}
+  if(/chlorid|chlorure/.test(n))return mg<=250?'ok':mg<=1000?'warn':'bad';
+  if(/sulfat/.test(n))return mg<=250?'ok':mg<=500?'warn':'bad';
+  if(/nitrat/.test(n)&&!/nitrit/.test(n))return mg<=50?'ok':'bad';
+  if(/arsenic/.test(n))return mg<=0.01?'ok':'bad';
+  if(/fluor/.test(n))return mg<=1.5?'ok':'bad';
+  if(/boron|bore/.test(n))return mg<=2.4?'ok':'bad';
+  if(/^iron|fer total/.test(n))return mg<=0.3?'ok':'warn';
+  if(/mangan/.test(n))return mg<=0.1?'ok':'warn';
+  if(/turbid/.test(n))return v<=1?'ok':v<=5?'warn':'bad';
+  if(/^ph/.test(n))return v>=6.5&&v<=8.5?'ok':'warn';
+  if(/hardness|dureté/.test(n))return mg<=200?'ok':mg<=500?'warn':'bad';
+  if(/sodium/.test(n))return mg<=200?'ok':'warn';
+  if(/silica|silice/.test(n))return mg<=30?'ok':'warn';
+  if(/ammoni/.test(n))return mg<=0.5?'ok':'warn';
+  return '';}
+const dotc=cls=>`<span class="dotc ${cls}"></span>`;
 // coverage ledger
 let coverage=[];
 function cov(topic,state,note){coverage.push({topic,state,note});}
@@ -156,7 +208,7 @@ const RO_PARAMS=['Total dissolved solids','Specific conductance','Salinity','Chl
 const MICRO=['Escherichia coli','Fecal Coliform','Total Coliform','Enterococcus','Coliform','Escherichia coli (E. coli)'];
 
 async function adLocation(lat,lon){
-  const c=card('loc','Location');
+  const c=card('loc','Location','site',{closed:true});
   try{
     const r=await getJSON(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=10`);
     const a=r.address||{};const cc=(a.country_code||'').toUpperCase();
@@ -169,7 +221,7 @@ async function adLocation(lat,lon){
 }
 
 async function adSolar(lat,lon){
-  const c=card('solar','Solar & climate');
+  const c=card('solar','Solar & climate','energy');
   try{
     const u=`https://power.larc.nasa.gov/api/temporal/climatology/point?parameters=ALLSKY_SFC_SW_DWN,PRECTOTCORR,T2M,RH2M&community=RE&longitude=${lon}&latitude=${lat}&format=JSON`;
     const r=await getJSON(u);const p=r.properties.parameter;const M=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
@@ -186,7 +238,7 @@ async function adSolar(lat,lon){
 }
 
 async function adRiverFlow(lat,lon){
-  const c=card('flow','River discharge (modelled)');
+  const c=card('flow','River discharge (modelled)','sources');
   try{
     const u=`https://flood-api.open-meteo.com/v1/flood?latitude=${lat}&longitude=${lon}&daily=river_discharge,river_discharge_mean,river_discharge_min,river_discharge_max&past_days=30&forecast_days=1`;
     const r=await getJSON(u);const d=r.daily;const vals=d.river_discharge.filter(x=>x!=null);
@@ -199,7 +251,7 @@ async function adRiverFlow(lat,lon){
 }
 
 async function adOSM(lat,lon,r){
-  const c=card('osm','Water bodies & infrastructure (OpenStreetMap)');
+  const c=card('osm','Mapped water bodies & infrastructure','sources',{closed:true});
   const rm=r*1000;
   const q=`[out:json][timeout:90];(
     nwr(around:${rm},${lat},${lon})["natural"="water"];
@@ -249,7 +301,7 @@ async function adOSM(lat,lon,r){
 }
 
 function adDemand(places){
-  const c=card('demand','Community & demand');
+  const c=card('demand','Community & demand','site');
   const manual=+$('#pop').value||0;
   const near=places.filter(p=>p.pop>0).slice(0,5);
   const small=near.find(p=>p.pop<=20000);
@@ -261,11 +313,12 @@ function adDemand(places){
   html(c,`<dl class="kv"><dt>Population used</dt><dd><b>${pop?fmt(pop,0):'—'}</b> ${manual?'(entered)':pick?((pick===small||pick.pop<=20000)?`(nearest OSM ${esc(pick.place)}: ${esc(pick.name)}, ${fmt(pick.d,1)} km)`:`(nearest place is the city of ${esc(pick.name)}, ${fmt(pick.d,1)} km — for a community-scale plant enter its population above)`):'(no OSM population tag nearby — enter it above)'}</dd><dt>Demand basis</dt><dd>${lpcd} L/person/day + 15% losses</dd><dt>Average demand</dt><dd><b>${fmt(Q,1)}</b> m³/day · design ${fmt(Q*1.3,0)} m³/day (peak ×1.3)</dd></dl>`);
   if(near.length>1)html(c,`<div class="hint">Other places with population: ${near.filter(p=>p!==pick).map(p=>`${esc(p.name)} ${fmt(p.pop,0)} (${fmt(p.d,0)} km)`).join('; ')}</div>`);
   src(c,'OpenStreetMap place tags; WorldPop/GHSL in v1');
+  setStatus(c,pop?`${fmt(pop,0)} people`:'enter population',pop?'ok':'warn');
   return {pop,Q};
 }
 
 async function adUSGS(lat,lon,r){
-  const c=card('usgs','USGS gauges & wells (US)');
+  const c=card('usgs','USGS gauges & monitoring wells','sources',{closed:true});
   try{
     const b=bbox(lat,lon,r).join(',');
     const u=`https://api.waterdata.usgs.gov/ogcapi/v1/collections/monitoring-locations/items?bbox=${b}&f=json&limit=300`;
@@ -288,7 +341,7 @@ async function adUSGS(lat,lon,r){
 }
 
 async function adWQP(lat,lon,r){
-  const c=card('wqp','Water chemistry & microbiology (WQP, US)');
+  const c=card('wqp','Chemistry & microbiology (Water Quality Portal)','quality');
   const mi=(r*0.6214).toFixed(1);
   try{
     const us=`https://www.waterqualitydata.us/data/Station/search?lat=${lat}&long=${lon}&within=${mi}&mimeType=geojson`;
@@ -311,7 +364,7 @@ async function adWQP(lat,lon,r){
     const micro=list.filter(a=>isMicro(a.name));
     setStatus(c,`${sf.length} stations · ${rows.length} results`,sf.length?'ok':'none');
     html(c,`<div>${Object.entries(types).map(([k,v])=>`${esc(k)} ×${v}`).join(' · ')||'<span class="none">No WQP stations within radius.</span>'}</div>`);
-    const col=[{h:'Parameter',f:r=>esc(r.name)},{h:'Med',f:r=>r.med},{h:'n',num:1,f:r=>r.n},{h:'Min',num:1,f:r=>fmt(r.min,2)},{h:'Median',num:1,f:r=>fmt(r.median,2)},{h:'Max',num:1,f:r=>fmt(r.max,2)},{h:'Unit',f:r=>esc(r.unit||'')},{h:'Last',f:r=>esc(r.last)}];
+    const col=[{h:'Parameter',f:r=>dotc(flagVal(r.name,r.median,r.unit))+esc(r.name)},{h:'Water',f:r=>r.med==='GW'?'ground':'surface'},{h:'n',num:1,f:r=>r.n},{h:'Min',num:1,f:r=>fmt(r.min,2)},{h:'Median',num:1,f:r=>fmt(r.median,2)},{h:'Max',num:1,f:r=>fmt(r.max,2)},{h:'Unit',f:r=>esc(r.unit||'')},{h:'Last',f:r=>esc(String(r.last).slice(0,7))}];
     if(chem.length)html(c,'<b>Chemistry (RO-relevant)</b>'+table(chem.sort((x,y)=>y.n-x.n),col));
     if(micro.length)html(c,'<b>Microbiology</b>'+table(micro.sort((x,y)=>y.n-x.n),col));
     const tds=list.find(a=>a.name==='Total dissolved solids'),ec=list.find(a=>a.name==='Specific conductance');
@@ -320,12 +373,13 @@ async function adWQP(lat,lon,r){
     src(c,'Water Quality Portal (USGS + EPA + states), last 15 years',ur);
     cov('Water chemistry',chem.length?'ok':'none',chem.length?`${chem.length} parameters sampled`:'no chemistry results');
     cov('Microbiology (E. coli etc.)',micro.length?'ok':'none',micro.length?`${micro.reduce((a,b)=>a+b.n,0)} results`:'no bacteriology sampled within radius');
-    return {tds:est,cl};
+    const ec_=micro.find(a=>/escherichia/i.test(a.name))||micro[0];
+    return {tds:est,cl,micro:ec_?{name:ec_.name,n:ec_.n,max:ec_.max,median:ec_.median,unit:ec_.unit,last:ec_.last}:null,chemN:chem.length};
   }catch(e){fail(c,e,'WQP');cov('Water chemistry','missing',e.message);return {};}
 }
 
 async function adEPAUtility(lat,lon){
-  const c=card('util','Water utility serving this point (EPA)');
+  const c=card('util','Water utility serving this point','system');
   try{
     const u=`https://services.arcgis.com/cJ9YHowT8TU7DUyn/ArcGIS/rest/services/Water_System_Boundaries/FeatureServer/0/query?geometry=${lon},${lat}&geometryType=esriGeometryPoint&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=*&returnGeometry=false&f=json`;
     const r=await getJSON(u);if(r.error)throw new Error(r.error.message);
@@ -338,13 +392,16 @@ async function adEPAUtility(lat,lon){
       }
       html(c,'<div class="hint">Source-well and intake coordinates are withheld in SDWIS as critical infrastructure; wells shown on the map come from USGS/OSM instead.</div>');
       cov('Water utility / service area','ok','EPA CWS service-area boundary + SDWIS');
+      src(c,'EPA Community Water System Service Area Boundaries v3; Envirofacts SDWIS',u);
+      return {name:f[0].PWS_NAME||f[0].pws_name||f[0].PWSID,pop:f[0].POPULATION_SERVED_COUNT||f[0].population_served_count};
     }
     src(c,'EPA Community Water System Service Area Boundaries v3; Envirofacts SDWIS',u);
-  }catch(e){fail(c,e,'EPA');cov('Water utility / service area','missing',e.message);}
+    return {name:null};
+  }catch(e){fail(c,e,'EPA');cov('Water utility / service area','missing',e.message);return {};}
 }
 
 async function adECHO(lat,lon,r){
-  const c=card('echo','Wastewater discharges & treatment plants (EPA ECHO)');
+  const c=card('echo','Wastewater treatment plants (EPA ECHO)','system');
   try{
     const b=bbox(lat,lon,r);
     const u=`https://echodata.epa.gov/echo/cwa_rest_services.get_facilities?output=JSON&p_c1lat=${b[1]}&p_c1lon=${b[0]}&p_c2lat=${b[3]}&p_c2lon=${b[2]}&responseset=1`;
@@ -360,11 +417,12 @@ async function adECHO(lat,lon,r){
     html(c,'<div class="hint">Treated effluent at 0.5–1.5 g/L TDS is a candidate BWRO feed when flow ≥ ~50% of community demand. Grey water is not mapped separately in the US (combined sewers).</div>');
     src(c,'EPA ECHO CWA facility search (NPDES/ICIS)',u);
     cov('Wastewater treatment (EPA)',potw.length?'ok':fac.length?'partial':'none',`${potw.length} POTW / ${fac.length} permits`);
-  }catch(e){fail(c,e,'ECHO');cov('Wastewater treatment (EPA)','missing',e.message);}
+    return potw[0]?{name:potw[0].CWPName,d:potw[0].d}:null;
+  }catch(e){fail(c,e,'ECHO');cov('Wastewater treatment (EPA)','missing',e.message);return null;}
 }
 
 async function adHubeau(lat,lon,r){
-  const c=card('hubeau',"France & DOM: réseau d'eau potable, nappes, rivières (Hub'Eau)");
+  const c=card('hubeau',"Eau potable, nappes, rivières (Hub'Eau)",'quality');
   try{
     const communes=await getJSON(`https://geo.api.gouv.fr/communes?lat=${lat}&lon=${lon}&fields=code,nom,population,codeDepartement`);
     const com=communes[0];if(!com)throw new Error('no commune at this point');
@@ -378,7 +436,7 @@ async function adHubeau(lat,lon,r){
     const list=Object.values(agg).map(a=>{const s=[...a.vals].sort((x,y)=>x-y);return{...a,n:s.length,min:s[0],median:s[Math.floor(s.length/2)],max:s[s.length-1]};}).sort((a,b)=>b.n-a.n);
     const micro=list.filter(a=>/escherichia|coliformes|entérocoques/i.test(a.name)),chem=list.filter(a=>!micro.includes(a));
     if(dist.size)html(c,`<div><b>Distributeur:</b> ${[...dist].map(esc).join(', ')}</div>`);
-    const col=[{h:'Paramètre',f:r=>esc(r.name)},{h:'n',num:1,f:r=>r.n},{h:'Min',num:1,f:r=>fmt(r.min,2)},{h:'Médiane',num:1,f:r=>fmt(r.median,2)},{h:'Max',num:1,f:r=>fmt(r.max,2)},{h:'Unité',f:r=>esc(r.unit||'')},{h:'Dernier',f:r=>esc(String(r.last).slice(0,10))}];
+    const col=[{h:'Paramètre',f:r=>dotc(flagVal(r.name,r.median,r.unit))+esc(r.name)},{h:'n',num:1,f:r=>r.n},{h:'Min',num:1,f:r=>fmt(r.min,2)},{h:'Médiane',num:1,f:r=>fmt(r.median,2)},{h:'Max',num:1,f:r=>fmt(r.max,2)},{h:'Unité',f:r=>esc(r.unit||'')},{h:'Dernier',f:r=>esc(String(r.last).slice(0,10))}];
     if(chem.length)html(c,'<b>Eau distribuée — chimie</b>'+table(chem,col));
     if(micro.length)html(c,'<b>Eau distribuée — microbiologie</b>'+table(micro,col));
     const ec=list.find(a=>/conductivit/i.test(a.name));const cl=ec?classifyTDS(ecToTDS(ec.median)):null;
@@ -409,12 +467,13 @@ async function adHubeau(lat,lon,r){
     }catch(e){html(c,`<div class="err">hydrometrie: ${esc(e.message)}</div>`);}
     setStatus(c,`${data.length} analyses eau potable`,data.length?'ok':'none');
     src(c,"Hub'Eau (qualite_eau_potable, niveaux_nappes, qualite_nappes, hydrometrie) · geo.api.gouv.fr",ud);
-    return {tds:gwTDS??(ec?ecToTDS(ec.median):null),tdsLabel:gwTDS!=null?'Groundwater (ADES median EC)':'Distributed tap water (median EC)'};
+    const ecoli=micro.find(a=>/escherichia/i.test(a.name))||micro[0];
+    return {tds:gwTDS??(ec?ecToTDS(ec.median):null),tdsLabel:gwTDS!=null?'Groundwater (ADES median EC)':'Distributed tap water (median EC)',utility:[...dist][0]||null,micro:ecoli?{name:ecoli.name,n:ecoli.n,max:ecoli.max,median:ecoli.median,unit:ecoli.unit,last:ecoli.last}:null,chemN:chem.length};
   }catch(e){fail(c,e,"Hub'Eau");return {};}
 }
 
 function adFeedOptions(ctx){
-  const c=card('feed','Feed-water candidates & first-order sizing');
+  const c=card('feed','Feed-water candidates & first-order sizing','energy');
   const Q=ctx.Q||0;const psh=ctx.solar?.worst||null;
   const cands=[];
   if(ctx.coast)cands.push({src:'Seawater (coastline within radius)',tds:35000,sec:4.5});
@@ -425,11 +484,12 @@ function adFeedOptions(ctx){
   const rows=cands.map(k=>{const E=k.sec!=null&&Q?Q*k.sec:null;const pv=E&&psh?E/(psh*0.75):null;const cl=classifyTDS(k.tds);return{...k,E,pv,cl,batt:pv?Math.round(pv*0.8*1.5):null,gen:pv?Math.ceil(pv*0.8*1.25/5)*5:null,land:pv?Math.round(pv*7.5+Q*0.4+Q*2):null};});
   setStatus(c,Q?`${fmt(Q,0)} m³/d`:'needs population','');
   html(c,table(rows,[{h:'Feed',f:r=>esc(r.src)},{h:'TDS mg/L',num:1,f:r=>fmt(r.tds,0)},{h:'Class',f:r=>r.cl?`<span class="pill ${r.cl.cls}">${esc(r.cl.c)}</span>`:'?'},{h:'kWh/m³',num:1,f:r=>fmt(r.sec,1)},{h:'kWh/day',num:1,f:r=>fmt(r.E,0)},{h:'PV kWp',num:1,f:r=>fmt(r.pv,0)},{h:'Batt kWh',num:1,f:r=>fmt(r.batt,0)},{h:'Gen kVA',num:1,f:r=>fmt(r.gen,0)},{h:'Land m²',num:1,f:r=>fmt(r.land,0)}]));
+  ctx.best=rows.filter(r=>r.E!=null).sort((a,b)=>a.E-b.E)[0]||null;
   html(c,`<div class="hint">Daytime-RO strategy: PV sized on worst-month GHI (${psh?fmt(psh,2):'?'} kWh/m²/d, PR 0.75); battery ≈ 1.5 h of RO load (water storage does the rest); standby genset ×1.25; land = PV 7.5 m²/kWp + plant 0.4 m²/(m³/d) + 2 days' storage. Inland brackish needs brine evaporation ponds (~60 m² per m³/d of plant) not included. Energy figures include intake and distribution; small-plant penalty not applied.</div>`);
 }
 
 function adCoverage(){
-  const c=card('cov','Coverage report — what open data does and does not say here');
+  const c=card('cov','What open data does and does not say here','coverage');
   const ok=coverage.filter(x=>x.state==='ok'),none=coverage.filter(x=>x.state!=='ok');
   setStatus(c,`${ok.length} found · ${none.length} gaps`,none.length?'warn':'ok');
   html(c,`<ul class="plain cov">${coverage.map(x=>`<li><span class="pill ${x.state==='ok'?'ok':x.state==='partial'?'warn':'bad'}">${esc(x.state)}</span> ${esc(x.topic)} <span class="hint">— ${esc(x.note)}</span></li>`).join('')}</ul>`);
@@ -441,6 +501,32 @@ function adCoverage(){
   html(c,'<div class="hint">Not yet wired in v0 (planned for the backend): WorldPop/GHSL population, Thorslund global salinity points, IGRAC brackish-groundwater polygons, HydroWASTE, Copernicus Marine SSS/SST, GEBCO bathymetry, SIVICAP/SUI (Colombia), ANA/SISAGUA (Brazil), PDF ingestion for island reports.</div>');
 }
 
+
+function renderBrief(ctx){
+  const g=groupEl.site;g.hidden=false;const b=document.createElement('div');b.className='brief';
+  const loc=ctx.loc||{};const name=(loc.addr&&(loc.addr.village||loc.addr.town||loc.addr.city||loc.addr.municipality||loc.addr.county))||'This point';const region=[loc.addr?.state,loc.addr?.country].filter(Boolean).join(', ');
+  const sol=ctx.solar;const solCls=!sol?'':sol.worst>=4?'ok':sol.worst>=3?'warn':'bad';
+  const dem=ctx.Q?`${fmt(ctx.Q,0)}<small>m³/d</small>`:'—';
+  const best=ctx.best;const bestCls=best?best.cl?.cls||'info':'warn';
+  const micro=ctx.micro;const mCls=!micro?'':micro.max>0?'bad':'ok';
+  const util=ctx.utility;const okN=coverage.filter(x=>x.state==='ok').length,totN=coverage.length;
+  const covCls=okN/Math.max(1,totN)>=0.7?'ok':okN/Math.max(1,totN)>=0.4?'warn':'bad';
+  const tiles=[
+    {cls:solCls,l:'Sun · worst month',v:sol?`${fmt(sol.worst,1)}<small>kWh/m²/d</small>`:'—',n:sol?`${fmt(sol.ann,1)} annual · ${fmt(sol.annRain,0)} mm rain`:'no solar data'},
+    {cls:ctx.pop?'info':'warn',l:'Demand',v:dem,n:ctx.pop?`${fmt(ctx.pop,0)} people × 100 L`:'enter population'},
+    {cls:bestCls,l:'Best feed water',v:best?esc(best.cl?best.cl.c:'?'):'none found',n:best?`${fmt(best.tds,0)} mg/L · ${fmt(best.sec,1)} kWh/m³`:'no source with known salinity'},
+    {cls:mCls||'warn',l:'E. coli / coliforms',v:micro?(micro.max>0?`${fmt(micro.max,0)}<small>max /100 mL</small>`:'0<small>/100 mL</small>'):'not sampled',n:micro?`${micro.n} samples · last ${String(micro.last).slice(0,7)}`:'no bacteriology in open data'},
+    {cls:util?'ok':'warn',l:'Existing supply',v:util?'utility':'self-supplied',n:util?esc(util):'no registered system found'},
+    {cls:covCls,l:'Data coverage',v:`${okN}<small>/ ${totN}</small>`,n:ctx.wwtp?`WWTP nearby${ctx.wwtpName?': '+esc(ctx.wwtpName):''}`:'no treatment plant mapped'}];
+  const verdict=[];
+  if(best&&sol){verdict.push(`<b>${esc(best.src)}</b> is the lowest-energy option found: about <b>${fmt(best.pv,0)} kWp</b> of PV with ${fmt(best.batt,0)} kWh of battery and a ${fmt(best.gen,0)} kVA standby set, on roughly ${fmt(best.land/10000,2)} ha.`);}
+  else if(!best)verdict.push('No feed water with a known salinity was found in open data; the sizing below is for seawater or reuse only, or needs a well test.');
+  if(micro&&micro.max>0)verdict.push(`Bacteriological contamination is recorded nearby (${esc(micro.name)} up to ${fmt(micro.max,0)} ${esc(micro.unit||'')}), which strengthens the case for a treated supply.`);
+  if(!util)verdict.push('No registered water utility serves this point, so a community plant would be a new supply rather than a replacement.');
+  if(sol&&sol.worst<3)verdict.push(`Winter sun is weak (${fmt(sol.worst,1)} kWh/m²/d); expect a large array or seasonal generator use.`);
+  b.innerHTML=`<div><div class="place">${esc(name)}</div><div class="sub">${esc(region)} · ${ctx.lat.toFixed(4)}, ${ctx.lon.toFixed(4)} · ${ctx.r} km radius</div></div><div class="kpi">${tiles.map(t=>`<div class="${t.cls}"><span class="l">${t.l}</span><span class="v">${t.v}</span><span class="n" title="${t.n.replace(/<[^>]+>/g,'')}">${t.n}</span></div>`).join('')}</div><div class="verdict">${verdict.join(' ')}</div>`;
+  g.insertBefore(b,g.querySelector('h3').nextSibling);
+}
 // ---------- orchestrator ----------
 let running=false;
 async function scan(lat,lon){
@@ -448,24 +534,24 @@ async function scan(lat,lon){
   const r=Math.min(50,Math.max(1,+$('#radius').value||10));
   layerGroup.clearLayers();if(marker)map.removeLayer(marker);if(circle)map.removeLayer(circle);
   marker=L.marker([lat,lon]).addTo(map);circle=L.circle([lat,lon],{radius:r*1000,color:'#0f6f86',weight:1,fillOpacity:.04}).addTo(map);
-  dossier.innerHTML='';coverage=[];
+  scaffold();coverage=[];
   try{
     const loc=await adLocation(lat,lon);
     const cc=loc.cc;
     const [solar,osm]=await Promise.all([adSolar(lat,lon),adOSM(lat,lon,r)]);
     await adRiverFlow(lat,lon);
     const dem=adDemand(osm.places||[]);
-    const ctx={Q:dem.Q,solar,coast:osm.coast,wells:osm.wells,tds:null,wwtp:false};
+    const ctx={lat,lon,r,loc,Q:dem.Q,pop:dem.pop,solar,coast:osm.coast,wells:osm.wells,tds:null,wwtp:false,utility:null,micro:null,wwtpName:null};
     if(cc==='US'||cc==='PR'||cc==='VI'||cc==='GU'||cc==='AS'||cc==='MP'){
       const [u,w]=await Promise.all([adUSGS(lat,lon,r),adWQP(lat,lon,r)]);
-      ctx.tds=w.tds??null;ctx.tdsLabel='Local water (WQP sampled median)';ctx.wells+=u.filter(x=>/Well/i.test(x.site_type||'')).length;
-      await adEPAUtility(lat,lon);await adECHO(lat,lon,r);
+      ctx.tds=w.tds??null;ctx.micro=w.micro||null;ctx.tdsLabel='Local water (WQP sampled median)';ctx.wells+=u.filter(x=>/Well/i.test(x.site_type||'')).length;
+      const ut=await adEPAUtility(lat,lon);ctx.utility=ut&&ut.name||null;const ww=await adECHO(lat,lon,r);if(ww)ctx.wwtpName=ww.name;
       ctx.wwtp=coverage.some(x=>/Wastewater treatment \(EPA\)/.test(x.topic)&&x.state==='ok');
     }else if(['FR','GP','MQ','GF','RE','YT','BL','MF','PM'].includes(cc)){
-      const h=await adHubeau(lat,lon,r);ctx.tds=h.tds??null;ctx.tdsLabel=h.tdsLabel;
+      const h=await adHubeau(lat,lon,r);ctx.tds=h.tds??null;ctx.tdsLabel=h.tdsLabel;ctx.utility=h.utility||null;ctx.micro=h.micro||null;
       ctx.wwtp=coverage.some(x=>/Wastewater treatment \(OSM\)/.test(x.topic)&&x.state==='ok');
     }else{
-      const c=card('nat','National monitoring networks');
+      const c=card('nat','National monitoring networks','quality');
       setStatus(c,'no adapter yet','warn');
       html(c,`<div>No national adapter wired for <b>${esc(loc.addr.country||cc||'this country')}</b> in v0. Global layers above (OSM, NASA POWER, GloFAS) still apply.${cc==='CO'?' Colombia sources to wire next: IDEAM/DHIME (datos.gov.co SODA), SIRH/FUNIAS wells, SIVICAP (INS, E. coli/IRCA by municipio), SUI providers, INVEMAR REDCAM coastal quality, SIASAR rural systems.':''}${cc==='BR'?' Brazil: ANA SNIRH geoservices, SISAGUA, SNIS, SIAGAS wells.':''}${cc==='GB'?' UK: Environment Agency hydrology, groundwater and bathing-water APIs.':''}${cc==='BS'?' Bahamas: WSC and BRGM/USGS reports (PDF ingestion); OSM wells shown above.':''}</div>`);
       cov('National monitoring networks','none','no adapter for '+(cc||'country'));
@@ -473,6 +559,8 @@ async function scan(lat,lon){
     }
     adFeedOptions(ctx);
     adCoverage();
+    renderBrief(ctx);
+    dossier.scrollTop=0;
   }catch(e){const d=document.createElement('div');d.className='err';d.textContent='Scan failed: '+e.message;dossier.appendChild(d);}
   running=false;
 }
