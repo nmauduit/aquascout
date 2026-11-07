@@ -112,6 +112,12 @@ section.card.loading>.body::before{content:"Fetching from source…";display:blo
   .needlegend .hint{display:none}
   .needlegend b{font-size:10px}
 }
+
+.leaflet-control-layers-expanded{position:relative;padding-top:26px;max-height:70vh;overflow:auto}
+.lyr-close{position:absolute;top:4px;right:6px;width:20px;height:20px;line-height:18px;text-align:center;border-radius:50%;background:var(--chip);color:var(--fg);font-size:14px;cursor:pointer;border:1px solid var(--line)}
+.lyr-title{position:absolute;top:6px;left:10px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.leaflet-control-layers label{font-size:12.5px;line-height:1.35}
+@media (max-width:860px){.leaflet-control-layers-expanded{max-width:78vw}.leaflet-control-layers label{font-size:12px}}
 /* dossier structure */
 .grp{display:flex;flex-direction:column;gap:8px}
 .grp>h3{margin:14px 0 0;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600;display:flex;align-items:center;gap:8px}
@@ -263,6 +269,16 @@ async function loadDesalOSM(){
 desalGroup.on('add',async()=>{if(desalGroup.getLayers().length)return;try{const list=await loadDesalOSM();for(const p of list){L.marker([p.la,p.lo],{icon:desalIcon(feedColor(p.feed),false)}).bindPopup(`<b>${esc(p.name)}</b><br>${esc(p.status)}${p.capacity?' · '+esc(p.capacity):''}${p.method?' · '+esc(p.method):''}${p.feed?'<br>feed: '+esc(p.feed):''}${p.operator?'<br>'+esc(p.operator):''}<br><a href="https://www.openstreetmap.org/${p.id}" target="_blank" rel="noopener">OpenStreetMap</a>`).addTo(desalGroup);}}catch(e){console.warn('desal layer',e);}});
 async function loadPlanned(){if(plannedList)return plannedList;try{const j=await getJSON('data/planned-desal.json');plannedList=j.plants||[];}catch(e){plannedList=[];}return plannedList;}
 plannedGroup.on('add',async()=>{if(plannedGroup.getLayers().length)return;const list=await loadPlanned();for(const p of list){L.marker([p.lat,p.lon],{icon:desalIcon(p.power&&/solar/i.test(p.power)?'#b26a00':feedColor(p.feed),true)}).bindPopup(`<b>${esc(p.name)}</b><br>${esc(p.region||'')}, ${esc(p.country)}<br><b>${esc(p.status)}</b>${p.capacity_m3d?' · '+fmt(p.capacity_m3d,0)+' m³/d':''}<br>${esc(p.technology||'')} · feed: ${esc(p.feed||'?')} · power: ${esc(p.power||'?')}${p.serves?'<br>serves: '+esc(p.serves):''}${p.operator?'<br>'+esc(p.operator):''}${p.approx?'<br><i>location approximate</i>':''}<br><a href="${esc(p.source)}" target="_blank" rel="noopener">source</a>`).addTo(plannedGroup);}});
+
+// foldable layers panel (touch devices keep it open otherwise)
+(function(){const el=ctl.getContainer();const x=document.createElement('div');x.className='lyr-close';x.textContent='×';x.title='Close';x.setAttribute('role','button');const t=document.createElement('div');t.className='lyr-title';t.textContent='Map layers';
+  x.addEventListener('click',e=>{e.stopPropagation();ctl.collapse();});el.appendChild(t);el.appendChild(x);
+  L.DomEvent.disableClickPropagation(el);
+  map.on('click',()=>ctl.collapse());
+  // on touch, Leaflet expands on tap; make the icon toggle instead of only expand
+  const link=el.querySelector('.leaflet-control-layers-toggle');if(link){L.DomEvent.on(link,'click',e=>{if(el.classList.contains('leaflet-control-layers-expanded')){setTimeout(()=>ctl.collapse(),0);}});}
+})();
+
 ctl.addOverlay(needGroup,'Water need — rural safely-managed water (WHO/UNICEF JMP)');
 ctl.addOverlay(desalGroup,'Existing desalination plants (OpenStreetMap)');
 ctl.addOverlay(plannedGroup,'Planned / recent desal & solar RO (curated)');
