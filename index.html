@@ -370,8 +370,8 @@ async function adHubeau(lat,lon,r){
     const com=communes[0];if(!com)throw new Error('no commune at this point');
     html(c,`<dl class="kv"><dt>Commune</dt><dd><b>${esc(com.nom)}</b> (${esc(com.code)}) · ${fmt(com.population,0)} hab.</dd></dl>`);
     // drinking water results
-    const ud=`https://hubeau.eaufrance.fr/api/v1/qualite_eau_potable/resultats_dis?code_commune=${com.code}&size=500&sort=desc`;
-    const rd=await getJSON(ud);const data=rd.data||[];
+    const ud=`https://hubeau.eaufrance.fr/api/v1/qualite_eau_potable/resultats_dis?code_commune=${com.code}&size=300&sort=desc`;
+    let data=[];try{const rd=await getJSON(ud,{timeout:70000});data=rd.data||[];}catch(e){html(c,`<div class="err">qualite_eau_potable: ${esc(e.message)}</div>`);}
     const keep=/escherichia|coliformes|entérocoques|conductivit|chlorures|sodium|sulfates|nitrates|dureté|fluorures|arsenic|turbidit|ph$|bore|fer|manganèse|calcium|magnésium|résidu sec|bromures|strontium|baryum|silice/i;
     const agg={};const dist=new Set();
     for(const x of data){if(x.nom_distributeur)dist.add(x.nom_distributeur);const n=x.libelle_parametre;if(!keep.test(n))continue;const v=x.resultat_numerique;if(v==null)continue;const a=agg[n]||(agg[n]={name:n,unit:x.libelle_unite,vals:[],last:'',conf:x.conclusion_conformite_prelevement});a.vals.push(+v);if((x.date_prelevement||'')>a.last)a.last=x.date_prelevement;}
@@ -389,19 +389,19 @@ async function adHubeau(lat,lon,r){
     let gwTDS=null;
     // groundwater: piezometers + quality
     const b=bbox(lat,lon,r).join(',');
-    try{const pz=await getJSON(`https://hubeau.eaufrance.fr/api/v1/niveaux_nappes/stations?bbox=${b}&size=200`);const st=(pz.data||[]).map(s=>({...s,d:km([lat,lon],[s.y,s.x])})).sort((a,b)=>a.d-b.d);
+    try{const pz=await getJSON(`https://hubeau.eaufrance.fr/api/v1/niveaux_nappes/stations?bbox=${b}&size=200`,{timeout:60000});const st=(pz.data||[]).map(s=>({...s,d:km([lat,lon],[s.y,s.x])})).sort((a,b)=>a.d-b.d);
       for(const s of st.slice(0,60))dot(s.y,s.x,'brackish',`<b>Piézomètre ${esc(s.code_bss)}</b><br>${esc(s.libelle_pe||'')}<br>${esc(s.nom_commune||'')} · ${fmt(s.d,1)} km`);
       html(c,`<div><b>Piézomètres:</b> ${st.length} dans le rayon${st.length?' — '+st.slice(0,4).map(s=>`${esc(s.code_bss)} (${esc((s.libelle_pe||'').slice(0,40))}, ${fmt(s.d,1)} km)`).join('; '):''}</div>`);
       cov('Groundwater level stations (ADES)',st.length?'ok':'none',`${st.length} piézomètres`);
     }catch(e){html(c,`<div class="err">niveaux_nappes: ${esc(e.message)}</div>`);}
-    try{const qa=await getJSON(`https://hubeau.eaufrance.fr/api/v1/qualite_nappes/analyses?bbox=${b}&code_param=1303,1337,1340,1449,1335,1338&size=500&sort=desc`);const an=qa.data||[];const g={};
+    try{const qa=await getJSON(`https://hubeau.eaufrance.fr/api/v1/qualite_nappes/analyses?bbox=${b}&code_param=1303,1337,1340,1449,1335,1338&size=500&sort=desc`,{timeout:70000});const an=qa.data||[];const g={};
       for(const x of an){const n=x.nom_param;const a=g[n]||(g[n]={name:n,unit:x.nom_unite,vals:[],last:'',sites:new Set()});a.vals.push(+x.resultat);a.sites.add(x.code_bss);if((x.date_debut_prelevement||'')>a.last)a.last=x.date_debut_prelevement;}
       const gl=Object.values(g).map(a=>{const s=[...a.vals].sort((x,y)=>x-y);return{...a,n:s.length,min:s[0],median:s[Math.floor(s.length/2)],max:s[s.length-1]};});
       if(gl.length)html(c,'<b>Nappes — qualité (ADES)</b>'+table(gl,[...col.slice(0,6),{h:'Sites',num:1,f:r=>r.sites.size}]));
       const gec=gl.find(a=>/conductivit/i.test(a.name));if(gec){gwTDS=ecToTDS(gec.median);const gc=classifyTDS(gwTDS);html(c,`<div><span class="pill ${gc.cls}">${esc(gc.l)}</span> groundwater TDS≈${fmt(ecToTDS(gec.median),0)} mg/L (median EC across ${gec.sites.size} wells)</div>`);}
       cov('Groundwater chemistry (ADES)',gl.length?'ok':'none',gl.length?`${an.length} analyses`:'none');
     }catch(e){html(c,`<div class="err">qualite_nappes: ${esc(e.message)}</div>`);}
-    try{const hy=await getJSON(`https://hubeau.eaufrance.fr/api/v2/hydrometrie/referentiel/stations?bbox=${b}&size=100&en_service=true`);const hs=(hy.data||[]).map(s=>({...s,d:km([lat,lon],[s.latitude_station,s.longitude_station])})).sort((a,b)=>a.d-b.d);
+    try{const hy=await getJSON(`https://hubeau.eaufrance.fr/api/v2/hydrometrie/referentiel/stations?bbox=${b}&size=100&en_service=true`,{timeout:60000});const hs=(hy.data||[]).map(s=>({...s,d:km([lat,lon],[s.latitude_station,s.longitude_station])})).sort((a,b)=>a.d-b.d);
       for(const s of hs.slice(0,40))dot(s.latitude_station,s.longitude_station,'sea',`<b>Station hydro ${esc(s.code_station)}</b><br>${esc(s.libelle_station||'')}<br>${esc(s.libelle_cours_eau||'')} · ${fmt(s.d,1)} km`);
       let obs='';if(hs[0]){try{const o=await getJSON(`https://hubeau.eaufrance.fr/api/v2/hydrometrie/observations_tr?code_entite=${hs[0].code_station}&grandeur_hydro=Q&size=1&sort=desc`);const v=o.data?.[0];if(v)obs=` — ${esc(hs[0].libelle_station)}: débit ${fmt(v.resultat_obs/1000,2)} m³/s (${esc(String(v.date_obs).slice(0,16))})`;}catch(e){}}
       html(c,`<div><b>Stations hydrométriques:</b> ${hs.length}${obs}</div>`);
