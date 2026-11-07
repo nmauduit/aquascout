@@ -171,6 +171,11 @@ const map=L.map('map',{zoomControl:true}).setView([20,-40],3);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
 const gsw=L.tileLayer('https://storage.googleapis.com/global-surface-water/tiles2021/occurrence/{z}/{x}/{y}.png',{maxZoom:13,opacity:.7,attribution:'JRC Global Surface Water'});
 $('#gsw').addEventListener('change',e=>e.target.checked?gsw.addTo(map):map.removeLayer(gsw));
+const gebco=L.tileLayer.wms('https://www.gebco.net/data_and_products/gebco_web_services/web_map_service/mapserv?',{layers:'GEBCO_LATEST',format:'image/png',transparent:true,opacity:.6,attribution:'GEBCO'});
+// ArcGIS dynamic MapServer as a tile layer (export per tile)
+const ArcTile=L.TileLayer.extend({getTileUrl:function(c){const z=c.z,n=Math.pow(2,z);const x0=c.x/n*360-180,x1=(c.x+1)/n*360-180;const la=y=>{const t=Math.PI-2*Math.PI*y/n;return 180/Math.PI*Math.atan(0.5*(Math.exp(t)-Math.exp(-t)));};const y0=la(c.y+1),y1=la(c.y);return `${this._url}/export?bbox=${x0},${y0},${x1},${y1}&bboxSR=4326&imageSR=3857&size=256,256&format=png32&transparent=true&layers=show:${this.options.layerIds}&f=image`;}});
+const whymap=new ArcTile('https://services.bgr.de/arcgis/rest/services/grundwasser/whymap_gwr/MapServer',{layerIds:'10,11',opacity:.45,attribution:'WHYMAP © BGR/UNESCO'});
+const ctl=L.control.layers(null,{'Surface water occurrence (JRC)':gsw,'Bathymetry (GEBCO)':gebco,'Groundwater resources & saline areas (WHYMAP)':whymap},{collapsed:true,position:'topright'}).addTo(map);
 let marker,circle,layerGroup=L.layerGroup().addTo(map);
 const colors={sea:'#2c5e8a',brackish:'#4f8a8b',fresh:'#2f8f5b',waste:'#7a5a3a'};
 function dot(lat,lon,kind,label){L.circleMarker([lat,lon],{radius:6,color:colors[kind],fillColor:colors[kind],fillOpacity:.8,weight:1}).bindPopup(label).addTo(layerGroup);}
@@ -184,7 +189,7 @@ const dossier=$('#dossier');
 const cards={};
 const GROUPS=[['site','Site'],['sources','Water sources & quantity'],['quality','Water quality'],['system','Existing water system'],['energy','Solar & plant sizing'],['coverage','Data coverage']];
 const groupEl={};let progressEl=null,progressItems={};
-const SRC_LABELS={loc:'Place & elevation (OSM, Open-Meteo)',solar:'Solar & rain (NASA POWER)',osm:'Water bodies & infrastructure (OpenStreetMap)',flow:'River discharge (GloFAS)',demand:'Community & demand',usgs:'USGS gauges & wells',wqp:'Water Quality Portal (chemistry, E. coli)',util:'EPA water utility',echo:'EPA ECHO wastewater',hubeau:"Hub'Eau (eau potable, nappes, rivières)",'co-irca':'INS SIVICAP (IRCA)','co-q':'IDEAM water quality','co-st':'IDEAM stations','co-sui':'Superservicios RUPS',nat:'National network',feed:'Feed-water sizing',cov:'Coverage report'};
+const SRC_LABELS={loc:'Place & elevation (OSM, Open-Meteo)',solar:'Solar & rain (NASA POWER)',osm:'Water bodies & infrastructure (OpenStreetMap)',flow:'River discharge (GloFAS)',demand:'Community & demand',usgs:'USGS gauges & wells',wqp:'Water Quality Portal (chemistry, E. coli)',util:'EPA water utility',echo:'EPA ECHO wastewater',hubeau:"Hub'Eau (eau potable, nappes, rivières)",'co-irca':'INS SIVICAP (IRCA)','co-q':'IDEAM water quality','co-st':'IDEAM stations','co-sui':'Superservicios RUPS',whymap:'WHYMAP global hydrogeology',gebco:'GEBCO sea depth','br-st':'ANA hydromet network','br-gw':'RIMAS groundwater wells','br-ete':'ANA sewage plants','br-note':'Brazil quality (pending)',nat:'National network',feed:'Feed-water sizing',cov:'Coverage report'};
 let scanT0=0,scanTimer=null;
 function scaffold(){dossier.innerHTML='';progressEl=document.createElement('div');progressEl.className='status';progressEl.innerHTML='<div class="hd"><span>Scanning…</span><span class="t">0 s</span></div><ul></ul>';dossier.appendChild(progressEl);progressItems={};scanT0=Date.now();clearInterval(scanTimer);scanTimer=setInterval(()=>{const t=progressEl.querySelector('.hd .t');if(t&&!progressEl.classList.contains('complete'))t.textContent=Math.round((Date.now()-scanT0)/1000)+' s';},1000);for(const [id,label] of GROUPS){const g=document.createElement('div');g.className='grp';g.id='g-'+id;g.hidden=true;g.innerHTML=`<h3>${esc(label)}</h3>`;dossier.appendChild(g);groupEl[id]=g;}}
 function progress(id,state){if(!progressEl)return;let it=progressItems[id];if(!it){it=document.createElement('li');it.innerHTML=`<i></i><span>${esc(SRC_LABELS[id]||id)}</span><em class="ms"></em>`;it.dataset.t0=Date.now();progressEl.querySelector('ul').appendChild(it);progressItems[id]=it;}it.className=state;if(state!=='run')it.querySelector('.ms').textContent=((Date.now()-(+it.dataset.t0))/1000).toFixed(1)+' s';const n=Object.values(progressItems),d=n.filter(x=>x.className!=='run').length,bad=n.filter(x=>x.className==='err').length;progressEl.querySelector('.hd span').textContent=d<n.length?`Fetching ${d}/${n.length} sources…`:`Scan complete — ${n.length} sources${bad?`, ${bad} failed`:''}`;}
@@ -322,17 +327,18 @@ async function adOSM(lat,lon,r){
   }catch(e){fail(c,e);cov('Mapped water bodies / infrastructure','missing','Overpass unreachable');return {coast:false,places:[]};}
 }
 
-function adDemand(places){
+function adDemand(places,wp){
   const c=card('demand','Community & demand','site');
   const manual=+$('#pop').value||0;
   const near=places.filter(p=>p.pop>0).slice(0,5);
   const small=near.find(p=>p.pop<=20000);
   const pick=(near[0]&&near[0].d<=3)?near[0]:(small||near[0]);
-  const assumed=!manual&&!pick;
-  const pop=manual||(pick?pick.pop:500);
+  const assumed=!manual&&!pick&&!wp;
+  const pop=manual||(pick&&(pick===small||pick.pop<=20000)?pick.pop:wp?wp.pop:pick?pick.pop:500);
   const lpcd=100;
   const Q=pop*lpcd*1.15/1000;
   setStatus(c,assumed?'assumed 500 — enter population':`${fmt(pop,0)} people`,assumed?'warn':'ok');
+  if(wp)html(c,`<div><b>WorldPop 2020:</b> ${fmt(wp.pop,0)} people within the ${wp.R} km box${manual||(pick&&(pick===small||pick.pop<=20000))?' (for reference)':' — used as demand basis'}</div>`);
   html(c,`<dl class="kv"><dt>Population used</dt><dd><b>${fmt(pop,0)}</b> ${assumed?'<span class="pill warn">assumed</span> no OSM population tag nearby — enter the community size above and press Enter':manual?'(entered)':pick?((pick===small||pick.pop<=20000)?`(nearest OSM ${esc(pick.place)}: ${esc(pick.name)}, ${fmt(pick.d,1)} km)`:`(nearest place is the city of ${esc(pick.name)}, ${fmt(pick.d,1)} km — for a community-scale plant enter its population above)`):''}</dd><dt>Demand basis</dt><dd>${lpcd} L/person/day + 15% losses</dd><dt>Average demand</dt><dd><b>${fmt(Q,1)}</b> m³/day · design ${fmt(Q*1.3,0)} m³/day (peak ×1.3)</dd></dl>`);
   if(near.length>1)html(c,`<div class="hint">Other places with population: ${near.filter(p=>p!==pick).map(p=>`${esc(p.name)} ${fmt(p.pop,0)} (${fmt(p.d,0)} km)`).join('; ')}</div>`);
   src(c,'OpenStreetMap place tags; WorldPop/GHSL in v1');
@@ -496,6 +502,46 @@ async function adHubeau(lat,lon,r){
 }
 
 
+
+async function adGlobalGW(lat,lon){
+  const c=card('whymap','Global hydrogeology (WHYMAP / IGRAC)','sources',{closed:true});
+  try{
+    const b=bbox(lat,lon,50);
+    const u=`https://services.bgr.de/arcgis/rest/services/grundwasser/whymap_gwr/MapServer/identify?geometry=${lon},${lat}&geometryType=esriGeometryPoint&sr=4326&layers=all:10,11,0,1,9&tolerance=2&mapExtent=${b.join(',')}&imageDisplay=400,400,96&returnGeometry=false&f=json`;
+    const r=await getJSON(u);const res=r.results||[];
+    const by=id=>res.filter(x=>x.layerId===id).map(x=>x.attributes);
+    const rech=by(11)[0],sal=by(10)[0],arid=by(9)[0],mining=by(1)[0];
+    const rv=rech?Object.values(rech).filter(v=>typeof v==='string'&&/recharge|mm|aquifer|complex|local|shallow|major|basin/i.test(v)).join(' · ')||JSON.stringify(rech):null;
+    setStatus(c,sal?'saline groundwater area':rech?'aquifer mapped':'no WHYMAP class','');
+    html(c,`<dl class="kv"><dt>Groundwater resources</dt><dd>${rech?esc(rv.slice(0,160)):'<span class="none">outside mapped classes</span>'}</dd><dt>Saline groundwater (&gt;5 g/L)</dt><dd>${sal?'<span class="pill bad">yes — point lies in a mapped saline-groundwater area</span>':'<span class="pill ok">not mapped as saline at 1:25M</span>'}</dd><dt>Low rainfall (&lt;200 mm/a)</dt><dd>${arid?'yes':'no'}</dd><dt>Groundwater mining / heavy abstraction</dt><dd>${mining?'yes':'no'}</dd></dl><div class="hint">1:25,000,000 global map — a regional hint only; toggle the WHYMAP overlay (layers control, top-right) to see the polygons. Local wells can differ completely.</div>`);
+    src(c,'WHYMAP Groundwater Resources (BGR/UNESCO, IGRAC)',u);
+    cov('Global hydrogeology (WHYMAP)',rech||sal?'ok':'none',sal?'mapped saline-groundwater area':rech?'aquifer class mapped':'no class at point');
+    return {saline:!!sal};
+  }catch(e){fail(c,e,'WHYMAP');cov('Global hydrogeology (WHYMAP)','missing',e.message);return {};}
+}
+async function adDepth(lat,lon,coast){
+  if(!coast)return null;
+  const c=card('gebco','Sea depth near the point (GEBCO)','sources',{closed:true});
+  try{
+    const d=0.05;const u=`https://www.gebco.net/data_and_products/gebco_web_services/web_map_service/mapserv?service=WMS&version=1.3.0&request=GetFeatureInfo&layers=GEBCO_LATEST&query_layers=GEBCO_LATEST&crs=EPSG:4326&bbox=${lat-d},${lon-d},${lat+d},${lon+d}&width=101&height=101&i=50&j=50&info_format=text/plain`;
+    const t=await getJSON(u,{text:true});const m=t.match(/-?\d+(\.\d+)?/);const z=m?+m[0]:null;
+    setStatus(c,z!=null?`${fmt(z,0)} m`:'?','');
+    html(c,`<div>Elevation/depth at the clicked point from GEBCO 2024: <b>${z!=null?fmt(z,0)+' m':'n/a'}</b> (negative = below sea level). Toggle the bathymetry overlay to read depths along a candidate intake/outfall line; SWRO intakes usually want ≥ 8–10 m depth within ~1 km, and outfalls need current for brine dilution.</div>`);
+    src(c,'GEBCO 2024 grid via WMS GetFeatureInfo',u);
+    return z;
+  }catch(e){fail(c,e,'GEBCO');return null;}
+}
+async function adWorldPop(lat,lon,r){
+  // population within radius from WorldPop 2020 (unconstrained, 100 m). Async task API.
+  const R=Math.min(r,10);const b=bbox(lat,lon,R);
+  const poly={type:'FeatureCollection',features:[{type:'Feature',properties:{},geometry:{type:'Polygon',coordinates:[[[b[0],b[1]],[b[2],b[1]],[b[2],b[3]],[b[0],b[3]],[b[0],b[1]]]]}}]};
+  const u=`https://api.worldpop.org/v1/services/stats?dataset=wpgppop&year=2020&geojson=${encodeURIComponent(JSON.stringify(poly))}&runasync=false`;
+  const r1=await getJSON(u,{timeout:60000});
+  let data=r1.data;if(!data&&r1.taskid){for(let i=0;i<20&&!data;i++){await new Promise(z=>setTimeout(z,2000));const t=await getJSON(`https://api.worldpop.org/v1/tasks/${r1.taskid}`);if(t.status==='finished')data=t.data;}}
+  if(!data||data.total_population==null)throw new Error('no WorldPop result');
+  return {pop:Math.round(data.total_population),R};
+}
+
 // ---------- Colombia (datos.gov.co Socrata) ----------
 const SODA='https://www.datos.gov.co/resource/';
 const norm=t=>String(t||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toUpperCase().trim();
@@ -590,6 +636,51 @@ async function adColombia(lat,lon,r,loc){
   return {tds,tdsLabel:'Surface water (IDEAM median EC)',micro:ecoli?{name:ecoli.name,n:ecoli.n,max:ecoli.max,median:ecoli.median,unit:ecoli.unit,last:ecoli.last}:null,utility,irca,chemN};
 }
 
+// ---------- Brazil (ANA SNIRH ArcGIS) ----------
+const ANA='https://www.snirh.gov.br/arcgis/rest/services/';
+async function arcQuery(url,lat,lon,r,fields='*',where='1=1',max=500){const b=bbox(lat,lon,r);const u=`${url}/query?where=${encodeURIComponent(where)}&geometry=${b[0]},${b[1]},${b[2]},${b[3]}&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=${encodeURIComponent(fields)}&outSR=4326&returnGeometry=true&resultRecordCount=${max}&f=json`;const j=await getJSON(u,{timeout:45000});if(j.error)throw new Error(j.error.message||'ArcGIS error');return (j.features||[]).map(f=>({...f.attributes,la:f.geometry?.y,lo:f.geometry?.x})).filter(x=>x.la!=null).map(x=>({...x,d:km([lat,lon],[x.la,x.lo])})).sort((a,b)=>a.d-b.d);}
+async function adBrazil(lat,lon,r,loc){
+  let utility=null,ecoli=null,tds=null;
+  // 1. national hydromet network (ANA/SGH) — flow, rain, quality, telemetry
+  const c1=card('br-st','Rede hidrometeorológica nacional (ANA)','sources',{closed:true});
+  try{
+    const base=ANA+'SGH/REDE_HIDROMETEOROLOGICA_NACIONAL/MapServer/';
+    const [flu,qual,tel]=await Promise.all([arcQuery(base+'3',lat,lon,r,'CODIGO,NOME,BACIANOME,SUBBACIANOME,AREADRENAGEM,OPERANDO,PERIODOQUALAGUAFIM'),arcQuery(base+'6',lat,lon,r,'CODIGO,NOME,SUBBACIANOME,OPERANDO,PERIODOQUALAGUAFIM'),arcQuery(base+'9',lat,lon,r,'CODIGO,NOME,OPERANDO')]);
+    for(const x of flu.slice(0,40))dot(x.la,x.lo,'sea',`<b>ANA ${esc(x.CODIGO)}</b><br>${esc(x.NOME)}<br>fluviométrica c/ descarga · ${esc(x.SUBBACIANOME||'')} · ${fmt(x.d,1)} km`);
+    for(const x of qual.slice(0,40))dot(x.la,x.lo,'sea',`<b>ANA ${esc(x.CODIGO)}</b><br>${esc(x.NOME)}<br>qualidade d'água · ${fmt(x.d,1)} km`);
+    setStatus(c1,`${flu.length} vazão · ${qual.length} qualidade · ${tel.length} telemétricas`,flu.length||qual.length?'ok':'none');
+    if(flu.length)html(c1,'<b>Estações fluviométricas com medição de descarga</b>'+table(flu.slice(0,8),[{h:'Código',f:x=>esc(x.CODIGO)},{h:'Nome',f:x=>esc(x.NOME)},{h:'Sub-bacia',f:x=>esc(x.SUBBACIANOME||'')},{h:'Área km²',num:1,f:x=>fmt(x.AREADRENAGEM,0)},{h:'km',num:1,f:x=>fmt(x.d,1)}]));
+    if(qual.length)html(c1,'<b>Estações de qualidade d\'água</b>'+table(qual.slice(0,8),[{h:'Código',f:x=>esc(x.CODIGO)},{h:'Nome',f:x=>esc(x.NOME)},{h:'Operando',f:x=>x.OPERANDO?'sim':'não'},{h:'km',num:1,f:x=>fmt(x.d,1)}]));
+    html(c1,'<div class="hint">Séries de vazão/nível e resultados de qualidade por estação: Hidroweb (ANA) pelo código. Indicadores anuais (IQA, E. coli, turbidez, DBO) do portal de dados abertos da ANA serão ligados na próxima versão.</div>');
+    src(c1,'ANA — Rede Hidrometeorológica Nacional (SNIRH ArcGIS)',base);
+    cov('Gauges & monitoring stations (ANA)',flu.length||qual.length?'ok':'none',`${flu.length} flow · ${qual.length} quality stations`);
+  }catch(e){fail(c1,e,'ANA');cov('Gauges & monitoring stations (ANA)','missing',e.message);}
+  // 2. RIMAS groundwater monitoring wells (CPRM)
+  const c2=card('br-gw','Poços de monitoramento RIMAS (CPRM/SGB)','sources',{closed:true});
+  try{
+    const w=await arcQuery(ANA+'SPR/Estacoes_RIMAS_2020/FeatureServer/0',lat,lon,Math.max(r,25),'CDEST,NOME,NMMUN,SGUF,TIPOPOCO,NMAQUIFERO,NIVELINICIO,NIVELMED,DTMEDICAO');
+    for(const x of w.slice(0,40))dot(x.la,x.lo,'brackish',`<b>RIMAS ${esc(x.CDEST)}</b><br>${esc(x.NOME||'')} · ${esc(x.NMAQUIFERO||'')}<br>nível médio ${fmt(x.NIVELMED,1)} m · ${fmt(x.d,1)} km`);
+    setStatus(c2,`${w.length} poços`,w.length?'ok':'none');
+    if(w.length)html(c2,table(w.slice(0,10),[{h:'Poço',f:x=>esc(x.CDEST)},{h:'Aquífero',f:x=>esc(x.NMAQUIFERO||'')},{h:'Município',f:x=>esc(x.NMMUN||'')},{h:'Nível médio m',num:1,f:x=>fmt(x.NIVELMED,1)},{h:'km',num:1,f:x=>fmt(x.d,1)}]));
+    else html(c2,'<div class="none">Nenhum poço RIMAS num raio de 25 km. Poços cadastrados e química: SIAGAS (CPRM), não ligado ainda.</div>');
+    src(c2,'RIMAS — Rede Integrada de Monitoramento das Águas Subterrâneas (CPRM), SNIRH ArcGIS');
+    cov('Groundwater monitoring wells (RIMAS)',w.length?'ok':'none',`${w.length} wells ≤25 km`);
+  }catch(e){fail(c2,e,'RIMAS');cov('Groundwater monitoring wells (RIMAS)','missing',e.message);}
+  // 3. sewage treatment plants
+  const c3=card('br-ete','Estações de tratamento de esgoto (ANA Atlas Esgotos)','system');
+  try{
+    const e=await arcQuery(ANA+'SPR/ETE_2019/FeatureServer/0',lat,lon,r,'ETE_NM,ETE_DS_STATUS,ETE_DS_TIPOLOGIA,ETE_DS_TIPOLOGRESUMIDA,ETE_QT_POPPROJ,ETE_NM_CORPORECEPTOR,ETE_PC_REMOCAODBO,ETE_AA_OPERACAO');
+    for(const x of e.slice(0,40))dot(x.la,x.lo,'waste',`<b>${esc(x.ETE_NM)}</b><br>${esc(x.ETE_DS_TIPOLOGIA||'')}<br>${fmt(x.ETE_QT_POPPROJ,0)} hab · ${fmt(x.d,1)} km`);
+    setStatus(c3,`${e.length} ETE`,e.length?'ok':'none');
+    if(e.length)html(c3,table(e.slice(0,10),[{h:'ETE',f:x=>esc(x.ETE_NM)},{h:'Processo',f:x=>esc(x.ETE_DS_TIPOLOGIA||x.ETE_DS_TIPOLOGRESUMIDA||'')},{h:'Pop. proj.',num:1,f:x=>fmt(x.ETE_QT_POPPROJ,0)},{h:'Rem. DBO %',num:1,f:x=>fmt(x.ETE_PC_REMOCAODBO,0)},{h:'Corpo receptor',f:x=>esc(x.ETE_NM_CORPORECEPTOR||'')},{h:'km',num:1,f:x=>fmt(x.d,1)}]));
+    else html(c3,'<div class="none">Nenhuma ETE mapeada no raio — comum em municípios sem coleta de esgoto.</div>');
+    src(c3,'ANA — Atlas Esgotos, ETE 2019/2020 (SNIRH ArcGIS)');
+    cov('Wastewater treatment (ANA)',e.length?'ok':'none',`${e.length} ETE`);
+  }catch(e){fail(c3,e,'ETE');cov('Wastewater treatment (ANA)','missing',e.message);}
+  html(card('br-note','Qualidade e prestador — próximos passos','quality'),'<div>Resultados de qualidade (E. coli, turbidez, IQA por estação) e qualidade da água distribuída (SISAGUA) e prestadores (SNIS) ainda não ligados nesta versão.</div>');setStatus(cards['br-note'],'pendente','warn');
+  return {utility,micro:ecoli,tds};
+}
+
 function adFeedOptions(ctx){
   const c=card('feed','Feed-water candidates & first-order sizing','energy');
   const Q=ctx.Q||0;const psh=ctx.solar?.worst||null;
@@ -599,6 +690,7 @@ function adFeedOptions(ctx){
   if(ctx.gwTDS!=null)cands.push({src:'Groundwater — wells sampled nearby (median)',tds:ctx.gwTDS,sec:secFor(ctx.gwTDS)+0.2});
   if(ctx.swTDS!=null)cands.push({src:'Surface water — streams sampled nearby (median)',tds:ctx.swTDS,sec:secFor(ctx.swTDS)});
   if(ctx.tds!=null){const t=ctx.tds;cands.push({src:ctx.tdsLabel||'Local groundwater / surface (sampled median)',tds:t,sec:t<1000?0.6:t<3000?1.6:t<10000?2.8:t<30000?4:5});}
+  if(ctx.salineArea&&ctx.tds==null&&ctx.gwTDS==null)cands.push({src:'Regional groundwater — WHYMAP maps this as a saline area (>5 g/L); assume brackish-to-saline until tested',tds:8000,sec:2.8});
   if(ctx.wells&&ctx.tds==null&&ctx.gwTDS==null)cands.push({src:`Mapped wells (${ctx.wells}) — salinity unknown`,tds:null,sec:null});
   if(ctx.wwtp)cands.push({src:'Treated wastewater (reuse)',tds:1000,sec:1.8});
   if(!cands.length)cands.push({src:'No feed-water source identified in open data',tds:null,sec:null});
@@ -619,7 +711,7 @@ function adCoverage(){
   if(!ok.some(x=>/chemistry|Chemistry/.test(x.topic)))gaps.push('Full RO feed-water analysis: TDS, major ions, silica, boron, hardness, turbidity/SDI, TOC');
   if(!ok.some(x=>/Groundwater|wells|USGS/.test(x.topic)))gaps.push('Well inventory with depth, yield and conductivity; aquifer map from the national geological survey');
   if(gaps.length)html(c,`<div><b>Minimum field campaign before sizing:</b><ul class="plain">${gaps.map(g=>`<li>${esc(g)}</li>`).join('')}</ul></div>`);
-  html(c,'<div class="hint">Not yet wired in v0 (planned for the backend): WorldPop/GHSL population, Thorslund global salinity points, IGRAC brackish-groundwater polygons, HydroWASTE, Copernicus Marine SSS/SST, GEBCO bathymetry, INVEMAR REDCAM + SIRH wells + SIASAR (Colombia), ANA/SISAGUA (Brazil), PDF ingestion for island reports.</div>');
+  html(c,'<div class="hint">Not yet wired: Thorslund global salinity points and HydroWASTE (need the data files), Copernicus Marine SSS/SST (account token), INVEMAR REDCAM + SIRH wells + SIASAR (Colombia), ANA quality indicators + SISAGUA + SNIS (Brazil), PDF ingestion for island reports.</div>');
 }
 
 
@@ -661,8 +753,10 @@ async function scan(lat,lon){
     const cc=loc.cc;
     const [solar,osm]=await Promise.all([adSolar(lat,lon),adOSM(lat,lon,r)]);
     await adRiverFlow(lat,lon);
-    const dem=adDemand(osm.places||[]);
-    const ctx={lat,lon,r,loc,Q:dem.Q,pop:dem.pop,assumed:dem.assumed,solar,coast:osm.coast,wells:osm.wells,tds:null,wwtp:false,utility:null,micro:null,wwtpName:null};
+    let wp=null;if(!(+$('#pop').value)){try{wp=await adWorldPop(lat,lon,r);}catch(e){wp=null;}}
+    const dem=adDemand(osm.places||[],wp);
+    const gw=await adGlobalGW(lat,lon);await adDepth(lat,lon,osm.coast);
+    const ctx={lat,lon,r,loc,Q:dem.Q,pop:dem.pop,assumed:dem.assumed,salineArea:!!gw.saline,solar,coast:osm.coast,wells:osm.wells,tds:null,wwtp:false,utility:null,micro:null,wwtpName:null};
     if(cc==='US'||cc==='PR'||cc==='VI'||cc==='GU'||cc==='AS'||cc==='MP'){
       const [u,w]=await Promise.all([adUSGS(lat,lon,r),adWQP(lat,lon,r)]);
       ctx.tds=null;ctx.gwTDS=w.gwTDS??null;ctx.swTDS=w.swTDS??null;ctx.micro=w.micro||null;ctx.wells+=u.filter(x=>/Well/i.test(x.site_type||'')).length;
@@ -671,6 +765,9 @@ async function scan(lat,lon){
     }else if(['FR','GP','MQ','GF','RE','YT','BL','MF','PM'].includes(cc)){
       const h=await adHubeau(lat,lon,r);ctx.tds=h.tds??null;ctx.tdsLabel=h.tdsLabel;ctx.utility=h.utility||null;ctx.micro=h.micro||null;
       ctx.wwtp=coverage.some(x=>/Wastewater treatment \(OSM\)/.test(x.topic)&&x.state==='ok');
+    }else if(cc==='BR'){
+      const h=await adBrazil(lat,lon,r,loc);ctx.utility=h.utility||null;ctx.micro=h.micro||null;
+      ctx.wwtp=coverage.some(x=>/Wastewater treatment \((OSM|ANA)\)/.test(x.topic)&&x.state==='ok');
     }else if(cc==='CO'){
       const h=await adColombia(lat,lon,r,loc);ctx.tds=h.tds??null;ctx.tdsLabel=h.tdsLabel;ctx.utility=h.utility||null;ctx.micro=h.micro||null;ctx.irca=h.irca;
       ctx.wwtp=coverage.some(x=>/Wastewater treatment \(OSM\)/.test(x.topic)&&x.state==='ok');
