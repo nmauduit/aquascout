@@ -151,6 +151,16 @@ section.card.closed>.body{display:none}
 .progress i{display:inline-block;width:9px;height:9px;border-radius:2px;background:var(--line)}
 .progress i.done{background:var(--good)} .progress i.err{background:var(--bad)} .progress i.run{background:var(--accent);animation:pulse 1.2s infinite}
 @media (max-width:1100px){.kpi{grid-template-columns:repeat(3,1fr)}}@media (max-width:480px){.kpi{grid-template-columns:repeat(2,1fr)}}
+@media print{
+  #map,.legend,.needlegend,.leaflet-control,header .row,#solarbtn,.status,.copybrief,.copylink{display:none!important}
+  body,#app,#side{display:block!important;height:auto!important;overflow:visible!important;width:100%!important;max-width:none!important}
+  #side{position:static!important}
+  .card{break-inside:avoid;border:1px solid #ccc;margin:6px 0}
+  .card.closed .body{display:block!important}
+  .kpi{display:grid;grid-template-columns:repeat(4,1fr)}
+  a[href]:after{content:''}
+  .econ-in{display:none}
+}
 </style>
 </head>
 <body>
@@ -400,7 +410,13 @@ function card(id,title,group='sources',opts={}){const g=groupEl[group]||dossier;
 function setStatus(c,txt,cls){c.st.textContent=txt;c.st.className='st '+(cls||'');c.el.classList.remove('loading');progress(c.id,cls==='bad'?'err':'done');}
 function src(c,label,url){const p=document.createElement('div');p.className='src';p.innerHTML=url?`Source: <a href="${esc(url)}" target="_blank" rel="noopener">${esc(label)}</a>`:'Source: '+esc(label);c.body.appendChild(p);}
 function html(c,h){const d=document.createElement('div');d.innerHTML=h;c.body.appendChild(d);}
-function fail(c,e,label){setStatus(c,'error','bad');c.el.classList.remove('closed');html(c,`<div class="err">${esc(label||'')} ${esc(e.message||e)}</div>`);}
+function fail(c,e,label){setStatus(c,'error','bad');c.el.classList.remove('closed');html(c,`<div class="err">${esc(label||'')} ${esc(e.message||e)}${RETRY[c.id]&&lastScan?` <a href="#" class="retry" data-id="${esc(c.id)}">retry this source</a>`:''}</div>`);
+  const a=c.body.querySelector('a.retry[data-id="'+c.id+'"]');if(a)a.addEventListener('click',ev=>{ev.preventDefault();retryCard(c.id);});}
+let lastScan=null;
+const RETRY={osm:()=>adOSM(lastScan.lat,lastScan.lon,lastScan.r),grid:()=>adGrid(lastScan.lat,lastScan.lon,lastScan.r,lastScan.cc,lastScan.loc),solar:()=>adSolar(lastScan.lat,lastScan.lon),flow:()=>adRiverFlow(lastScan.lat,lastScan.lon),usgs:()=>adUSGS(lastScan.lat,lastScan.lon,lastScan.r),wqp:()=>adWQP(lastScan.lat,lastScan.lon,lastScan.r),util:()=>adEPAUtility(lastScan.lat,lastScan.lon),echo:()=>adECHO(lastScan.lat,lastScan.lon,lastScan.r),hubeau:()=>adHubeau(lastScan.lat,lastScan.lon,lastScan.r),whymap:()=>adGlobalGW(lastScan.lat,lastScan.lon),need:()=>adNeed(countryA3(lastScan.cc),lastScan.cc,lastScan.loc),desal:()=>adDesalNearby(lastScan.lat,lastScan.lon),wpdx:()=>adWPdx(lastScan.lat,lastScan.lon,lastScan.r),bgs:()=>adAfricaGW(lastScan.lat,lastScan.lon)};
+async function retryCard(id){const fn=RETRY[id];if(!fn||!lastScan)return;const old=cards[id];const anchor=old&&old.el;const parent=anchor&&anchor.parentNode;const next=anchor&&anchor.nextSibling;if(anchor)anchor.remove();delete cards[id];
+  try{await fn();}catch(e){}const nu=cards[id];if(nu&&parent&&nu.el.parentNode!==parent){parent.insertBefore(nu.el,next);}
+  if(nu)html(nu,'<div class="hint">Re-fetched on its own; the brief and sizing above were not recomputed — rescan to refresh them.</div>');}
 function table(rows,cols){if(!rows.length)return '<div class="none">none</div>';return `<div class="tbl"><table><thead><tr>${cols.map(x=>`<th class="${x.num?'num':''}">${esc(x.h)}</th>`).join('')}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(x=>`<td class="${x.num?'num':''}">${x.f(r)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`;}
 
 
@@ -1097,11 +1113,12 @@ async function adEconomics(ctx){
   const best=ctx.best;if(!best||!best.E){setStatus(c,'needs a sized feed option','warn');html(c,'<div class="none">No feed water with an energy figure yet.</div>');return;}
   const tf=await tariffFor(ctx);const gd=ctx.grid||{};
   const island=/^(BS|KN|AG|LC|VC|GD|DM|BB|TT|KY|TC|VG|VI|AW|CW|BQ|SX|MF|BL|GP|MQ|HT|JM|DO|CU|PR|BM|MV|FJ|KI|TV|MH|TO|WS|VU|SB|PF|NC|CV|MU|SC|KM|ST|TL|CY|MT)$/.test(ctx.loc?.cc||'');
-  const defaults={E:best.E,Q:ctx.Q,pv:best.pv,batt:best.batt,gen:best.gen,tariff:tf.v,pvCost:island?1300:1000,battCost:350,genCost:250,diesel:island?1.3:1.0,lineKm:gd.cls==='near'?Math.max(0.3,gd.dLine||0.5):gd.cls==='mid'?gd.dLine:gd.cls==='unmapped'?2:gd.cls==='zni'?0.5:(gd.dLine||15),lineCost:30000,conn:15000,disc:0.08,life:20,om:0.02,rel:gd.rel||null,cls:gd.cls||'none',backupShare:ctx.solar?.worst>=4.5?0.05:ctx.solar?.worst>=3.5?0.10:0.20};
+  const T0=await loadTariffs();const dsl=(T0.diesel_usd_l&&T0.diesel_usd_l[ctx.loc?.cc])||(island?1.3:1.0);
+  const defaults={E:best.E,Q:ctx.Q,pv:best.pv,batt:best.batt,gen:best.gen,tariff:tf.v,pvCost:island?1300:1000,battCost:350,genCost:250,diesel:dsl,lineKm:gd.cls==='near'?Math.max(0.3,gd.dLine||0.5):gd.cls==='mid'?gd.dLine:gd.cls==='unmapped'?2:gd.cls==='zni'?0.5:(gd.dLine||15),lineCost:30000,conn:15000,disc:0.08,life:20,om:0.02,rel:gd.rel||null,cls:gd.cls||'none',backupShare:ctx.solar?.worst>=4.5?0.05:ctx.solar?.worst>=3.5?0.10:0.20};
   const ids=['tariff','pvCost','battCost','genCost','diesel','lineKm','lineCost','conn','disc','life','om'];
   const labels={tariff:'Grid tariff $/kWh',pvCost:'PV installed $/kWp',battCost:'Battery $/kWh',genCost:'Genset $/kVA',diesel:'Diesel $/L',lineKm:'Line extension km',lineCost:'Line cost $/km',conn:'Connection/transformer $',disc:'Discount rate',life:'Life years',om:'O&M %/yr of capex'};
   const wrap=document.createElement('div');wrap.className='econ';
-  wrap.innerHTML=`<div class="hint">Energy to produce <b>${fmt(best.E,0)} kWh/day</b> for ${fmt(ctx.Q,0)} m³/d (${esc(best.src)}, ${fmt(best.sec,1)} kWh/m³). Tariff source: ${esc(tf.src)}${tf.url?` <a href="${esc(tf.url)}" target="_blank" rel="noopener">↗</a>`:''}${tf.note?` — ${esc(tf.note)}`:''}. Grid: ${esc(gd.label||'lookup still running — table will refresh')}${gd.rel?`, reliability ${esc(gd.rel)}`:''}.</div><div class="econ-in">${ids.map(k=>`<label class="small">${labels[k]}<input type="number" step="any" data-k="${k}" value="${defaults[k]}"></label>`).join('')}</div><div class="econ-out"></div>`;
+  wrap.innerHTML=`<div class="hint">Energy to produce <b>${fmt(best.E,0)} kWh/day</b> for ${fmt(ctx.Q,0)} m³/d (${esc(best.src)}, ${fmt(best.sec,1)} kWh/m³). Tariff source: ${esc(tf.src)}${tf.url?` <a href="${esc(tf.url)}" target="_blank" rel="noopener">↗</a>`:''}${tf.note?` — ${esc(tf.note)}`:''}. Diesel ${fmt(dsl,2)} $/L${T0.diesel_usd_l&&T0.diesel_usd_l[ctx.loc?.cc]?' (GlobalPetrolPrices)':' (assumed)'}. Grid: ${esc(gd.label||'lookup still running — table will refresh')}${gd.rel?`, reliability ${esc(gd.rel)}`:''}.</div><div class="econ-in">${ids.map(k=>`<label class="small">${labels[k]}<input type="number" step="any" data-k="${k}" value="${defaults[k]}"></label>`).join('')}</div><div class="econ-out"></div>`;
   c.body.appendChild(wrap);const out=wrap.querySelector('.econ-out');
   const run=()=>{const p={...defaults};wrap.querySelectorAll('input[data-k]').forEach(i=>{const v=parseFloat(i.value);if(!isNaN(v))p[i.dataset.k]=v;});const r=econCompute(p);
     const rows=[r.solar,r.hybrid,r.grid].sort((a,b)=>a.npv-b.npv);const win=rows[0];
@@ -1190,11 +1207,12 @@ function renderBrief(ctx){
   if(ctx.grid){const gd=ctx.grid;if(gd.cls==='zni')verdict.push(`The locality is in Colombia's non-interconnected zone with about ${fmt(gd.zni?.hMed,0)} h/day of generator service, so a solar-battery plant is the realistic design and can share the existing genset.`);else if(gd.cls==='unmapped')verdict.push(`No grid line is mapped in OpenStreetMap here, although the country is ${fmt(gd.wb['EG.ELC.ACCS.ZS'].v,0)} % electrified — confirm the nearest line before choosing between hybrid and off-grid.`);else if(gd.cls==='none'||gd.cls==='far')verdict.push(`No grid line is mapped within reach (${esc(gd.label)}), so plan fully off-grid.`);else if(gd.cls==='near'&&gd.rel==='poor')verdict.push(`The grid is close (${fmt(gd.dLine,1)} km) but nationally unreliable (${esc(gd.rel)}), so keep storage and a standby set.`);else if(gd.cls==='near')verdict.push(`A ${gd.kv?fmt(gd.kv,0)+' kV ':''}line passes ${fmt(gd.dLine,1)} km away${gd.util?' ('+esc(gd.util.name)+')':''}, so a grid-tied PV plant without battery is an option.`);}
   if(ctx.econ)verdict.push(`Energy economics: <b>${esc(ctx.econ.win)}</b> is the cheapest way to power the plant over 20 years; solar off-grid wins above a tariff of ${fmt(ctx.econ.breakeven,2)} $/kWh (local ${fmt(ctx.econ.tariff,2)}). Full water cost about <b>${fmt(ctx.econ.lcow,2)} $/m³</b>${ctx.econ.lcow<ctx.econ.truck?`, versus ~${ctx.econ.truck} $/m³ for trucked water`:''}.`);
   if(sol&&sol.worst<3)verdict.push(`Winter sun is weak (${fmt(sol.worst,1)} kWh/m²/d); expect a large array or seasonal generator use.`);
-  b.innerHTML=`<div><div class="place">${esc(name)}</div><div class="sub">${esc(region)} · ${ctx.lat.toFixed(4)}, ${ctx.lon.toFixed(4)} · ${ctx.r} km radius · <a href="#" class="copybrief">copy brief</a> · <a href="#" class="copylink">copy link</a></div></div><div class="kpi">${tiles.map(t=>`<div class="${t.cls}"><span class="l">${t.l}</span><span class="v">${t.v}</span><span class="n" title="${t.n.replace(/<[^>]+>/g,'')}">${t.n}</span></div>`).join('')}</div><div class="verdict">${verdict.join(' ')}</div>`;
+  b.innerHTML=`<div><div class="place">${esc(name)}</div><div class="sub">${esc(region)} · ${ctx.lat.toFixed(4)}, ${ctx.lon.toFixed(4)} · ${ctx.r} km radius · <a href="#" class="copybrief">copy brief</a> · <a href="#" class="copylink">copy link</a> · <a href="#" class="printbrief">print</a></div></div><div class="kpi">${tiles.map(t=>`<div class="${t.cls}"><span class="l">${t.l}</span><span class="v">${t.v}</span><span class="n" title="${t.n.replace(/<[^>]+>/g,'')}">${t.n}</span></div>`).join('')}</div><div class="verdict">${verdict.join(' ')}</div>`;
   g.insertBefore(b,g.querySelector('h3').nextSibling);
   const cp=async(txt,el)=>{try{await navigator.clipboard.writeText(txt);el.textContent='copied ✓';setTimeout(()=>el.textContent=el.dataset.l,1500);}catch(e){prompt('Copy:',txt);}};
   b.querySelector('.copybrief').addEventListener('click',e=>{e.preventDefault();e.target.dataset.l='copy brief';cp(briefText(ctx),e.target);});
   b.querySelector('.copylink').addEventListener('click',e=>{e.preventDefault();e.target.dataset.l='copy link';cp(location.href,e.target);});
+  b.querySelector('.printbrief').addEventListener('click',e=>{e.preventDefault();window.print();});
 }
 async function runNational(cc,lat,lon,r,loc){
   const n={};
@@ -1234,7 +1252,7 @@ async function scan(lat,lon){
   scaffold();coverage=[];
   try{
     const loc=await adLocation(lat,lon);
-    const cc=loc.cc;
+    const cc=loc.cc;lastScan={lat,lon,r,cc,loc};
     const osmP=adOSM(lat,lon,r);
     const solar=await adSolar(lat,lon);
     await adRiverFlow(lat,lon);
