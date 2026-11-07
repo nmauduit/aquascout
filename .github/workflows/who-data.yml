@@ -1,0 +1,18 @@
+name: Weekly WHO GHO refresh
+on:
+  schedule:
+    - cron: '41 4 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tools/fetch_who.py
+      - run: |
+          git config user.name "aquascout-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add data/who-wash.json
+          git diff --cached --quiet || git commit -m "WHO GHO data refresh" && git push

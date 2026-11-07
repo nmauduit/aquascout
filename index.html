@@ -100,6 +100,7 @@ section.card.loading>.body::before{content:"Fetching from source…";display:blo
 
 .needlegend{position:absolute;bottom:12px;right:12px;z-index:500;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 10px;font-size:11px;display:none;flex-direction:column;gap:3px;max-width:220px}
 .needlegend b{font-size:11.5px}
+.needlegend select{font-size:11px;max-width:100%;padding:2px}
 .needlegend .bar{display:flex;height:10px;border-radius:2px;overflow:hidden}
 .needlegend .bar i{flex:1}
 .needlegend .lbl{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--muted)}
@@ -156,7 +157,18 @@ section.card.closed>.body{display:none}
 <div id="app">
   <div id="mapwrap">
     <div id="map"></div>
-    <div class="needlegend" id="needlegend"><b>Share of population lacking safe water</b><div class="bar"><i style="background:#f1f6f8"></i><i style="background:#c6dbe9"></i><i style="background:#8fb3d6"></i><i style="background:#5b86b8"></i><i style="background:#2f5a94"></i><i style="background:#1a3566"></i></div><div class="lbl"><span>&lt;10%</span><span>&gt;80%</span></div><div class="hint" style="font-size:10px">Country layer: rural without safely managed (JMP via World Bank). Regional layer: without at least basic (JMP inequalities). Grey = no estimate</div></div>
+    <div class="needlegend" id="needlegend"><b>WHO / UNICEF water &amp; health</b>
+      <select id="needsel" aria-label="Indicator">
+        <option value="smdw_ru">Lacking safely managed water — rural (JMP)</option>
+        <option value="smdw_ur">Lacking safely managed water — urban (JMP)</option>
+        <option value="smdw">Lacking safely managed water — total (JMP)</option>
+        <option value="basw_ru">Lacking even basic water — rural (JMP)</option>
+        <option value="basw">Lacking even basic water — total (JMP)</option>
+        <option value="sms">Lacking safely managed sanitation (JMP)</option>
+        <option value="mort">Deaths from unsafe water/sanitation per 100k (WHO, SDG 3.9.2)</option>
+        <option value="ww">Domestic wastewater NOT safely treated (WHO, SDG 6.3.1)</option>
+      </select>
+      <div class="bar"><i style="background:#f1f6f8"></i><i style="background:#c6dbe9"></i><i style="background:#8fb3d6"></i><i style="background:#5b86b8"></i><i style="background:#2f5a94"></i><i style="background:#1a3566"></i></div><div class="lbl"><span id="needlo">&lt;10%</span><span id="needhi">&gt;80%</span></div><div class="hint" style="font-size:10px" id="needhint">Country values: JMP via World Bank API; WHO GHO pre-baked weekly. Regional layer (where loaded): without at least basic water. Grey = no estimate.</div></div>
     <div class="legend">
       <div><i style="background:var(--sea)"></i>Monitoring / gauges</div>
       <div><i style="background:var(--brackish)"></i>Wells, springs, intakes</div>
@@ -234,15 +246,28 @@ async function loadJMP(){
   return jmpPromise;
 }
 function needColor(v){if(v==null)return '#9aa5ad';const gap=100-v;return gap<10?'#f1f6f8':gap<25?'#c6dbe9':gap<40?'#8fb3d6':gap<60?'#5b86b8':gap<80?'#2f5a94':'#1a3566';}
+const needRamp=['#f1f6f8','#c6dbe9','#8fb3d6','#5b86b8','#2f5a94','#1a3566'];
+let whoData=null;async function loadWHO(){if(whoData)return whoData;try{whoData=await getJSON('data/who-wash.json');}catch(e){whoData={};}return whoData;}
+let needInd='smdw_ru';
+// value to show for a country under the selected indicator; returns {gap, label}
+function needValue(a3,jmp,who){const d=jmp[a3]||{};
+  if(needInd==='mort'){const m=who.SDGWSHBOD&&who.SDGWSHBOD[a3];return m?{gap:m.v,txt:`${fmt(m.v,1)} deaths /100k (${m.y})`,scale:[2,5,10,25,50]}:null;}
+  if(needInd==='ww'){const m=who.WSH_DOMESTIC_WASTE_SAFELY_TREATED&&who.WSH_DOMESTIC_WASTE_SAFELY_TREATED[a3];return m?{gap:100-m.v,txt:`${fmt(100-m.v,0)}% not safely treated (${m.y})`,scale:[10,25,40,60,80]}:null;}
+  const v=d[needInd];if(v==null)return null;return{gap:100-v,txt:`${fmt(100-v,0)}% lacking (${d[needInd+'_y']||''})`,scale:[10,25,40,60,80]};}
+function needFill(x){if(!x)return '#9aa5ad';const s=x.scale;const g=x.gap;return g<s[0]?needRamp[0]:g<s[1]?needRamp[1]:g<s[2]?needRamp[2]:g<s[3]?needRamp[3]:g<s[4]?needRamp[4]:needRamp[5];}
 let needLayer=null,countriesGeo=null;
 const needGroup=L.layerGroup();
 needGroup.on('add',async()=>{
   $('#needlegend').style.display='flex';
   if(needLayer)return;
-  try{const [geo,jmp]=await Promise.all([countriesGeo||getJSON('data/countries.geojson'),loadJMP()]);countriesGeo=geo;
-    needLayer=L.geoJSON(geo,{style:f=>{const d=jmp[f.properties.a3];const v=d?(d.smdw_ru??d.smdw??null):null;return{color:'#ffffff',weight:.5,fillColor:needColor(v),fillOpacity:.55};},
-      onEachFeature:(f,l)=>{const d=jmp[f.properties.a3];l.bindTooltip(d?`<b>${esc(d.name)}</b><br>Safely managed water: rural ${fmt(d.smdw_ru,0)}% · urban ${fmt(d.smdw_ur,0)}% · total ${fmt(d.smdw,0)}% (${d.smdw_y||d.smdw_ru_y||''})<br>At least basic: rural ${fmt(d.basw_ru,0)}% · total ${fmt(d.basw,0)}%<br>Safely managed sanitation: ${fmt(d.sms,0)}%`:`<b>${esc(f.properties.n)}</b><br>no JMP estimate`,{sticky:true});}});
-    needLayer.addTo(needGroup);}catch(e){console.warn('need layer',e);}
+  try{const [geo,jmp,who]=await Promise.all([countriesGeo||getJSON('data/countries.geojson'),loadJMP(),loadWHO()]);countriesGeo=geo;
+    const styleFn=f=>({color:'#ffffff',weight:.5,fillColor:needFill(needValue(f.properties.a3,jmp,who)),fillOpacity:.55});
+    needLayer=L.geoJSON(geo,{style:styleFn,
+      onEachFeature:(f,l)=>{const a3=f.properties.a3;const d=jmp[a3];const m=who.SDGWSHBOD&&who.SDGWSHBOD[a3];const w=who.WSH_DOMESTIC_WASTE_SAFELY_TREATED&&who.WSH_DOMESTIC_WASTE_SAFELY_TREATED[a3];
+        l.bindTooltip(()=>{const sel=needValue(a3,jmp,who);return `<b>${esc(d?d.name:f.properties.n)}</b>${sel?' — <b>'+esc(sel.txt)+'</b>':''}<br>${d?`Safely managed water: rural ${fmt(d.smdw_ru,0)}% · urban ${fmt(d.smdw_ur,0)}% · total ${fmt(d.smdw,0)}% (${d.smdw_y||d.smdw_ru_y||''})<br>At least basic: rural ${fmt(d.basw_ru,0)}% · total ${fmt(d.basw,0)}%<br>Safely managed sanitation: ${fmt(d.sms,0)}%`:'no JMP estimate'}${m?`<br>WASH-attributable deaths: ${fmt(m.v,1)} /100k (${m.y})`:''}${w?`<br>Domestic wastewater safely treated: ${fmt(w.v,0)}% (${w.y})`:''}`;},{sticky:true});}});
+    needLayer.addTo(needGroup);
+    const sel=$('#needsel');sel.addEventListener('change',()=>{needInd=sel.value;needLayer.setStyle(styleFn);const isM=needInd==='mort';$('#needlo').textContent=isM?'<2':'<10%';$('#needhi').textContent=isM?'>50 /100k':'>80%';});
+  }catch(e){console.warn('need layer',e);}
 });
 needGroup.on('remove',()=>{$('#needlegend').style.display='none';});
 
@@ -295,12 +320,13 @@ async function solarInventoryHTML(){const list=(await loadPlanned()).filter(isRe
 (function(){const el=ctl.getContainer();const x=document.createElement('div');x.className='lyr-close';x.textContent='×';x.title='Close';x.setAttribute('role','button');const t=document.createElement('div');t.className='lyr-title';t.textContent='Map layers';
   x.addEventListener('click',e=>{e.stopPropagation();ctl.collapse();});el.appendChild(t);el.appendChild(x);
   L.DomEvent.disableClickPropagation(el);
+  const nl=$('#needlegend');if(nl){L.DomEvent.disableClickPropagation(nl);L.DomEvent.disableScrollPropagation(nl);}
   map.on('click',()=>ctl.collapse());
   // on touch, Leaflet expands on tap; make the icon toggle instead of only expand
   const link=el.querySelector('.leaflet-control-layers-toggle');if(link){L.DomEvent.on(link,'click',e=>{if(el.classList.contains('leaflet-control-layers-expanded')){setTimeout(()=>ctl.collapse(),0);}});}
 })();
 
-ctl.addOverlay(needGroup,'Water need — rural safely-managed water (WHO/UNICEF JMP)');
+ctl.addOverlay(needGroup,'Water need & health — WHO/UNICEF (pick indicator in the legend)');
 ctl.addOverlay(desalGroup,'Existing desalination plants (OpenStreetMap)');
 ctl.addOverlay(plannedGroup,'Desal plants — curated inventory (solid = operating, hollow = planned/stalled, grey = cancelled, orange = solar)');
 ctl.addOverlay(solarGroup,'☀ Solar / renewable-powered desal (dedicated inventory)');
