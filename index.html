@@ -104,6 +104,14 @@ section.card.loading>.body::before{content:"Fetching from source…";display:blo
 .needlegend .bar i{flex:1}
 .needlegend .lbl{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--muted)}
 .desal-ico{width:14px;height:14px;transform:rotate(45deg);border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.4)}
+
+@media (max-width:860px){
+  .legend{font-size:10px;padding:4px 7px;gap:0;flex-direction:row;flex-wrap:wrap;column-gap:8px;max-width:60%}
+  .legend i{width:8px;height:8px;margin-right:3px}
+  .needlegend{max-width:46%;font-size:10px;padding:4px 7px;right:8px;bottom:8px}
+  .needlegend .hint{display:none}
+  .needlegend b{font-size:10px}
+}
 /* dossier structure */
 .grp{display:flex;flex-direction:column;gap:8px}
 .grp>h3{margin:14px 0 0;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600;display:flex;align-items:center;gap:8px}
@@ -948,6 +956,34 @@ function renderBrief(ctx){
   b.innerHTML=`<div><div class="place">${esc(name)}</div><div class="sub">${esc(region)} · ${ctx.lat.toFixed(4)}, ${ctx.lon.toFixed(4)} · ${ctx.r} km radius</div></div><div class="kpi">${tiles.map(t=>`<div class="${t.cls}"><span class="l">${t.l}</span><span class="v">${t.v}</span><span class="n" title="${t.n.replace(/<[^>]+>/g,'')}">${t.n}</span></div>`).join('')}</div><div class="verdict">${verdict.join(' ')}</div>`;
   g.insertBefore(b,g.querySelector('h3').nextSibling);
 }
+async function runNational(cc,lat,lon,r,loc){
+  const n={};
+    if(cc==='US'||cc==='PR'||cc==='VI'||cc==='GU'||cc==='AS'||cc==='MP'){
+      const [u,w]=await Promise.all([adUSGS(lat,lon,r),adWQP(lat,lon,r)]);
+      n.tds=null;n.gwTDS=w.gwTDS??null;n.swTDS=w.swTDS??null;n.micro=w.micro||null;n.wellsAdd=u.filter(x=>/Well/i.test(x.site_type||'')).length;
+      const ut=await adEPAUtility(lat,lon);n.utility=ut&&ut.name||null;const ww=await adECHO(lat,lon,r);if(ww)n.wwtpName=ww.name;
+      n.wwtp=coverage.some(x=>/Wastewater treatment \(EPA\)/.test(x.topic)&&x.state==='ok');
+    }else if(['FR','GP','MQ','GF','RE','YT','BL','MF','PM'].includes(cc)){
+      const h=await adHubeau(lat,lon,r);n.tds=h.tds??null;n.tdsLabel=h.tdsLabel;n.utility=h.utility||null;n.micro=h.micro||null;
+      n.wwtp=coverage.some(x=>/Wastewater treatment \(OSM\)/.test(x.topic)&&x.state==='ok');
+    }else if(cc==='BR'){
+      const h=await adBrazil(lat,lon,r,loc);n.utility=h.utility||null;n.micro=h.micro||null;
+      n.wwtp=coverage.some(x=>/Wastewater treatment \((OSM|ANA)\)/.test(x.topic)&&x.state==='ok');
+    }else if(cc==='CO'){
+      const h=await adColombia(lat,lon,r,loc);n.tds=h.tds??null;n.tdsLabel=h.tdsLabel;n.utility=h.utility||null;n.micro=h.micro||null;n.irca=h.irca;
+      n.wwtp=coverage.some(x=>/Wastewater treatment \(OSM\)/.test(x.topic)&&x.state==='ok');
+    }else{
+      const AFRICA=new Set('DZ AO BJ BW BF BI CM CV CF TD KM CG CD CI DJ EG GQ ER SZ ET GA GM GH GN GW KE LS LR LY MG MW ML MR MU MA MZ NA NE NG RW ST SN SC SL SO ZA SS SD TZ TG TN UG ZM ZW EH'.split(' '));
+      const wp=await adWPdx(lat,lon,r);
+      if(AFRICA.has(cc)){const ag=await adAfricaGW(lat,lon);if(ag.tds!=null&&n.tds==null){n.tds=ag.tds;n.tdsLabel='Regional groundwater (Africa Groundwater Atlas SEC)';}}
+      adPortals(cc,loc.addr.country);
+      if(!PORTALS[cc]&&!wp){const c=card('nat','National monitoring networks','quality');setStatus(c,'no adapter yet','warn');html(c,`<div>No national adapter or portal listed for <b>${esc(loc.addr.country||cc||'this country')}</b>. Global layers (OSM, NASA POWER, GloFAS, WHYMAP, JMP) still apply.</div>`);cov('National monitoring networks','none','no adapter for '+(cc||'country'));}
+      if(wp&&wp.fcN)n.micro={name:'Fecal coliform presence (WPdx)',n:wp.fcN,max:wp.fcPos?1:0,median:null,unit:'positive tests',last:''};
+      n.wwtp=coverage.some(x=>/Wastewater treatment \(OSM\)/.test(x.topic)&&x.state==='ok');
+    }
+  return n;
+}
+
 // ---------- orchestrator ----------
 let running=false;
 async function scan(lat,lon){
@@ -959,36 +995,19 @@ async function scan(lat,lon){
   try{
     const loc=await adLocation(lat,lon);
     const cc=loc.cc;
-    const [solar,osm]=await Promise.all([adSolar(lat,lon),adOSM(lat,lon,r)]);
+    const osmP=adOSM(lat,lon,r);
+    const solar=await adSolar(lat,lon);
     await adRiverFlow(lat,lon);
+    const natP=runNational(cc,lat,lon,r,loc);
+    const osm=await osmP;
     let wp=null; // WorldPop API is not callable from a browser page (CORS); backend item
     const dem=adDemand(osm.places||[],wp);
     const gw=await adGlobalGW(lat,lon);await adDepth(lat,lon,osm.coast);
     const a3=countryA3(cc);const need=await adNeed(a3,cc,loc);const ds=await adDesalNearby(lat,lon);
     const ctx={lat,lon,r,loc,Q:dem.Q,pop:dem.pop,assumed:dem.assumed,salineArea:!!gw.saline,need,ds,solar,coast:osm.coast,wells:osm.wells,tds:null,wwtp:false,utility:null,micro:null,wwtpName:null};
-    if(cc==='US'||cc==='PR'||cc==='VI'||cc==='GU'||cc==='AS'||cc==='MP'){
-      const [u,w]=await Promise.all([adUSGS(lat,lon,r),adWQP(lat,lon,r)]);
-      ctx.tds=null;ctx.gwTDS=w.gwTDS??null;ctx.swTDS=w.swTDS??null;ctx.micro=w.micro||null;ctx.wells+=u.filter(x=>/Well/i.test(x.site_type||'')).length;
-      const ut=await adEPAUtility(lat,lon);ctx.utility=ut&&ut.name||null;const ww=await adECHO(lat,lon,r);if(ww)ctx.wwtpName=ww.name;
-      ctx.wwtp=coverage.some(x=>/Wastewater treatment \(EPA\)/.test(x.topic)&&x.state==='ok');
-    }else if(['FR','GP','MQ','GF','RE','YT','BL','MF','PM'].includes(cc)){
-      const h=await adHubeau(lat,lon,r);ctx.tds=h.tds??null;ctx.tdsLabel=h.tdsLabel;ctx.utility=h.utility||null;ctx.micro=h.micro||null;
-      ctx.wwtp=coverage.some(x=>/Wastewater treatment \(OSM\)/.test(x.topic)&&x.state==='ok');
-    }else if(cc==='BR'){
-      const h=await adBrazil(lat,lon,r,loc);ctx.utility=h.utility||null;ctx.micro=h.micro||null;
-      ctx.wwtp=coverage.some(x=>/Wastewater treatment \((OSM|ANA)\)/.test(x.topic)&&x.state==='ok');
-    }else if(cc==='CO'){
-      const h=await adColombia(lat,lon,r,loc);ctx.tds=h.tds??null;ctx.tdsLabel=h.tdsLabel;ctx.utility=h.utility||null;ctx.micro=h.micro||null;ctx.irca=h.irca;
-      ctx.wwtp=coverage.some(x=>/Wastewater treatment \(OSM\)/.test(x.topic)&&x.state==='ok');
-    }else{
-      const AFRICA=new Set('DZ AO BJ BW BF BI CM CV CF TD KM CG CD CI DJ EG GQ ER SZ ET GA GM GH GN GW KE LS LR LY MG MW ML MR MU MA MZ NA NE NG RW ST SN SC SL SO ZA SS SD TZ TG TN UG ZM ZW EH'.split(' '));
-      const wp=await adWPdx(lat,lon,r);
-      if(AFRICA.has(cc)){const ag=await adAfricaGW(lat,lon);if(ag.tds!=null&&ctx.tds==null){ctx.tds=ag.tds;ctx.tdsLabel='Regional groundwater (Africa Groundwater Atlas SEC)';}}
-      adPortals(cc,loc.addr.country);
-      if(!PORTALS[cc]&&!wp){const c=card('nat','National monitoring networks','quality');setStatus(c,'no adapter yet','warn');html(c,`<div>No national adapter or portal listed for <b>${esc(loc.addr.country||cc||'this country')}</b>. Global layers (OSM, NASA POWER, GloFAS, WHYMAP, JMP) still apply.</div>`);cov('National monitoring networks','none','no adapter for '+(cc||'country'));}
-      if(wp&&wp.fcN)ctx.micro={name:'Fecal coliform presence (WPdx)',n:wp.fcN,max:wp.fcPos?1:0,median:null,unit:'positive tests',last:''};
-      ctx.wwtp=coverage.some(x=>/Wastewater treatment \(OSM\)/.test(x.topic)&&x.state==='ok');
-    }
+    const nat=await natP;Object.assign(ctx,nat);
+    if(nat.wellsAdd)ctx.wells+=nat.wellsAdd;
+    ctx.wwtp=coverage.some(x=>/Wastewater treatment \((OSM|EPA|ANA)\)/.test(x.topic)&&x.state==='ok');
     adFeedOptions(ctx);
     adCoverage();
     renderBrief(ctx);
