@@ -1,0 +1,7 @@
+# Geofabrik region paths (one per line). Core set for v1; add more as DB size allows (free tier 500 MB).
+central-america
+south-america/colombia
+south-america/venezuela
+north-america/us/florida
+north-america/us/california
+africa/kenya

@@ -444,6 +444,13 @@ async function adRiverFlow(lat,lon){
   }catch(e){fail(c,e);cov('Surface-water quantity','missing',e.message);}
 }
 
+// ---------- AquaScout cache (Supabase PostGIS, refreshed weekly from Geofabrik by GitHub Actions) ----------
+const SB_URL='https://ldppoxultszthlrfdmcv.supabase.co',SB_KEY='sb_publishable_nBETDrf8J39fHN_I-CDR9A_C4BzpuF2';
+async function sbRpc(fn,args,timeout=20000){const r=await Promise.race([fetch(`${SB_URL}/rest/v1/rpc/${fn}`,{method:'POST',headers:{'Content-Type':'application/json',apikey:SB_KEY,Authorization:'Bearer '+SB_KEY},body:JSON.stringify(args)}),new Promise((_,rej)=>setTimeout(()=>rej(new Error('cache timeout')),timeout))]);if(!r.ok)throw new Error('cache HTTP '+r.status);return r.json();}
+let cacheCoverPromise={};
+async function cacheCovered(lat,lon){const k=lat.toFixed(2)+','+lon.toFixed(2);if(!cacheCoverPromise[k])cacheCoverPromise[k]=sbRpc('osm_covered',{lat,lon}).then(rows=>rows&&rows.length?rows[0]:null).catch(()=>null);return cacheCoverPromise[k];}
+// Convert cached rows into Overpass-like elements so the existing parsers work unchanged
+function cacheToElements(rows){return rows.map(x=>{const id=String(x.osm_id);const type=id[0]==='n'?'node':id[0]==='r'?'relation':'way';const g=x.geojson||{};let geometry=null;if(g.type==='LineString')geometry=g.coordinates.map(c=>({lat:c[1],lon:c[0]}));else if(g.type==='MultiLineString')geometry=g.coordinates.flat().map(c=>({lat:c[1],lon:c[0]}));else if(g.type==='Polygon')geometry=g.coordinates[0].map(c=>({lat:c[1],lon:c[0]}));else if(g.type==='MultiPolygon')geometry=g.coordinates[0][0].map(c=>({lat:c[1],lon:c[0]}));return{type,id:id.slice(1),tags:x.tags||{},lat:x.clat,lon:x.clon,center:{lat:x.clat,lon:x.clon},geometry,d_m:x.dist_m};});}
 async function adOSM(lat,lon,r){
   const c=card('osm','Mapped water bodies & infrastructure','sources',{closed:true});
   const rm=r*1000;
@@ -457,10 +464,13 @@ async function adOSM(lat,lon,r){
     node(around:${rm*2},${lat},${lon})["place"~"^(city|town|village|hamlet)$"]["population"];
   );out tags center 400;`;
   try{
-    const mirrors=['https://overpass-api.de/api/interpreter','https://overpass.kumi.systems/api/interpreter','https://lz4.overpass-api.de/api/interpreter'];
-    let r2=null,lastErr=null;
-    for(const m of mirrors){try{r2=await getJSON(m+'?data='+encodeURIComponent(q),{timeout:70000});break;}catch(e){lastErr=e;html(c,`<div class="hint">${esc(m.replace('https://','').split('/')[0])}: ${esc(e.message)} — trying next mirror</div>`);}}
+    let r2=null,lastErr=null,fromCache=null;
+    const cov0=await cacheCovered(lat,lon);
+    if(cov0){try{const rows=await sbRpc('osm_near',{lat,lon,r_m:rm*2,theme_in:'water',lim:800});const el=cacheToElements(rows).filter(e=>e.d_m<=rm||(e.tags.place&&e.tags.population));r2={elements:el};fromCache=cov0;}catch(e){html(c,`<div class="hint">cache: ${esc(e.message)} — using Overpass</div>`);}}
+    if(!r2){const mirrors=['https://overpass-api.de/api/interpreter','https://overpass.kumi.systems/api/interpreter','https://lz4.overpass-api.de/api/interpreter'];
+    for(const m of mirrors){try{r2=await getJSON(m+'?data='+encodeURIComponent(q),{timeout:70000});break;}catch(e){lastErr=e;html(c,`<div class="hint">${esc(m.replace('https://','').split('/')[0])}: ${esc(e.message)} — trying next mirror</div>`);}}}
     if(!r2)throw lastErr||new Error('all Overpass mirrors failed');
+    if(fromCache)html(c,`<div class="hint">From the AquaScout weekly cache (region ${esc(fromCache.region)}, loaded ${esc(String(fromCache.loaded_at).slice(0,10))}).</div>`);
     const el=r2.elements||[];const cnt={};const feats=[];let coast=false;const places=[];
     for(const e of el){const t=e.tags||{};const la=e.lat??e.center?.lat,lo=e.lon??e.center?.lon;
       if(t.natural==='coastline'){coast=true;continue;}
@@ -953,7 +963,9 @@ async function adGrid(lat,lon,r,cc,loc){
   // 1. OpenStreetMap power infrastructure (global)
   tasks.push((async()=>{
     const q=`[out:json][timeout:60];(way(around:${R},${lat},${lon})["power"~"^(line|minor_line|cable)$"];nwr(around:${R},${lat},${lon})["power"~"^(substation|plant)$"];node(around:${R},${lat},${lon})["power"="generator"]["generator:source"]["generator:output:electricity"];);out tags geom 500;`;
-    const r2=await overpass(q,65000);
+    let r2=null;const cov0=await cacheCovered(lat,lon);
+    if(cov0){try{const rows=await sbRpc('osm_near',{lat,lon,r_m:R,theme_in:'power',lim:600});r2={elements:cacheToElements(rows)};g.cache=cov0;}catch(e){}}
+    if(!r2)r2=await overpass(q,65000);
     for(const e of r2.elements||[]){const t=e.tags||{};
       if(/^(line|minor_line|cable)$/.test(t.power)&&e.geometry){const co=e.geometry.map(p=>[p.lat,p.lon]);const kv=voltKV(t.voltage);const d=distToPath([lat,lon],co);g.lines.push({kv,d,co,name:t.name||'',op:t.operator||'',kind:t.power});}
       else if(t.power==='substation'){const la=e.lat??e.center?.lat??(e.geometry&&e.geometry[0]?.lat),lo=e.lon??e.center?.lon??(e.geometry&&e.geometry[0]?.lon);if(la==null)continue;g.subs.push({name:t.name||'Substation',kv:voltKV(t.voltage),op:t.operator||'',d:km([lat,lon],[la,lo]),la,lo,sub:t.substation||''});}
@@ -1008,6 +1020,7 @@ async function adGrid(lat,lon,r,cc,loc){
   if(g.subs.length)html(c,'<b>Substations (OSM)</b>'+table(g.subs.slice(0,6),[{h:'Name',f:x=>esc(x.name)},{h:'kV',num:1,f:x=>fmt(x.kv,0)},{h:'Operator',f:x=>esc(x.op)},{h:'km',num:1,f:x=>fmt(x.d,1)}]));
   if(g.plants.length)html(c,'<b>Power plants / generators (OSM)</b>'+table(g.plants.slice(0,8),[{h:'Name',f:x=>esc(x.name)},{h:'Source',f:x=>esc(x.src)},{h:'MW',num:1,f:x=>fmt(x.mw,1)},{h:'Operator',f:x=>esc(x.op)},{h:'km',num:1,f:x=>fmt(x.d,1)}]));
   if(g.wb)html(c,'<b>National grid quality (World Bank)</b>'+table(Object.values(g.wb),[{h:'Indicator',f:x=>esc(x.name)},{h:'Value',num:1,f:x=>fmt(x.v,1)},{h:'Year',f:x=>esc(x.y)}])+`<div class="hint">Reliability class: <b>${esc(g.rel||'unknown')}</b> (from share of firms reporting outages, else T&amp;D losses). SAIDI/SAIFI by utility is not published as open API in most countries — EIA-861 (US) and XM/SUI (CO) are download files; see to-do.</div>`);
+  if(g.cache)html(c,`<div class="hint">OSM power features from the AquaScout weekly cache (region ${esc(g.cache.region)}, loaded ${esc(String(g.cache.loaded_at).slice(0,10))}).</div>`);
   html(c,'<div class="hint">Map: lines coloured by voltage (red ≥200 kV → yellow &lt;30 kV; dashed = HIFLD or cable), purple dots = substations, dark dots = plants (orange solar, blue wind, brown fossil). OSM coverage is uneven: a missing line is "not mapped", not "absent".</div>');
   return g;
 }
