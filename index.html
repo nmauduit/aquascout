@@ -270,7 +270,8 @@ async function loadDesalOSM(){
 }
 desalGroup.on('add',async()=>{if(desalGroup.getLayers().length)return;try{const list=await loadDesalOSM();for(const p of list){L.marker([p.la,p.lo],{icon:desalIcon(feedColor(p.feed),false)}).bindPopup(`<b>${esc(p.name)}</b><br>${esc(p.status)}${p.capacity?' · '+esc(p.capacity):''}${p.method?' · '+esc(p.method):''}${p.feed?'<br>feed: '+esc(p.feed):''}${p.operator?'<br>'+esc(p.operator):''}<br><a href="https://www.openstreetmap.org/${p.id}" target="_blank" rel="noopener">OpenStreetMap</a>`).addTo(desalGroup);}}catch(e){console.warn('desal layer',e);}});
 async function loadPlanned(){if(plannedList)return plannedList;try{const j=await getJSON('data/planned-desal.json');plannedList=j.plants||[];}catch(e){plannedList=[];}return plannedList;}
-plannedGroup.on('add',async()=>{if(plannedGroup.getLayers().length)return;const list=await loadPlanned();for(const p of list){L.marker([p.lat,p.lon],{icon:desalIcon(p.power&&/solar/i.test(p.power)?'#b26a00':feedColor(p.feed),true)}).bindPopup(`<b>${esc(p.name)}</b><br>${esc(p.region||'')}, ${esc(p.country)}<br><b>${esc(p.status)}</b>${p.capacity_m3d?' · '+fmt(p.capacity_m3d,0)+' m³/d':''}<br>${esc(p.technology||'')} · feed: ${esc(p.feed||'?')} · power: ${esc(p.power||'?')}${p.serves?'<br>serves: '+esc(p.serves):''}${p.operator?'<br>'+esc(p.operator):''}${p.approx?'<br><i>location approximate</i>':''}<br><a href="${esc(p.source)}" target="_blank" rel="noopener">source</a>`).addTo(plannedGroup);}});
+const statusStyle=p=>{const st=p.status||'';const solar=p.power&&/solar/i.test(p.power);const col=/cancel/i.test(st)?'#9aa5ad':solar?'#b26a00':feedColor(p.feed);const built=/operat|existing|built|commissioned|inaugurat|delivered|implemented/i.test(st)&&!/cancel|stalled/i.test(st);return{col,hollow:!built};};
+plannedGroup.on('add',async()=>{if(plannedGroup.getLayers().length)return;const list=await loadPlanned();for(const p of list){const ss=statusStyle(p);L.marker([p.lat,p.lon],{icon:desalIcon(ss.col,ss.hollow)}).bindPopup(`<b>${esc(p.name)}</b><br>${esc(p.region||'')}, ${esc(p.country)}<br><b>${esc(p.status)}</b>${p.capacity_m3d?' · '+fmt(p.capacity_m3d,0)+' m³/d':''}<br>${esc(p.technology||'')} · feed: ${esc(p.feed||'?')} · power: ${esc(p.power||'?')}${p.serves?'<br>serves: '+esc(p.serves):''}${p.operator?'<br>'+esc(p.operator):''}${p.approx?'<br><i>location approximate</i>':''}<br><a href="${esc(p.source)}" target="_blank" rel="noopener">source</a>`).addTo(plannedGroup);}});
 
 // foldable layers panel (touch devices keep it open otherwise)
 (function(){const el=ctl.getContainer();const x=document.createElement('div');x.className='lyr-close';x.textContent='×';x.title='Close';x.setAttribute('role','button');const t=document.createElement('div');t.className='lyr-title';t.textContent='Map layers';
@@ -283,7 +284,7 @@ plannedGroup.on('add',async()=>{if(plannedGroup.getLayers().length)return;const 
 
 ctl.addOverlay(needGroup,'Water need — rural safely-managed water (WHO/UNICEF JMP)');
 ctl.addOverlay(desalGroup,'Existing desalination plants (OpenStreetMap)');
-ctl.addOverlay(plannedGroup,'Planned / recent desal & solar RO (curated)');
+ctl.addOverlay(plannedGroup,'Desal plants — curated inventory (solid = operating, hollow = planned/stalled, grey = cancelled, orange = solar)');
 // prefetch quietly so the brief tiles have data
 setTimeout(()=>{loadJMP();loadPlanned();loadSub();loadDesalOSM().catch(()=>{});},1500);
 
@@ -314,7 +315,7 @@ async function adDesalNearby(lat,lon){
     const ex=osmL.map(p=>({...p,d:km([lat,lon],[p.la,p.lo]),kind:'OSM'})).filter(p=>p.d<=150).sort((a,b)=>a.d-b.d);
     const pn=pl.map(p=>({...p,la:p.lat,lo:p.lon,d:km([lat,lon],[p.lat,p.lon]),kind:'curated'})).filter(p=>p.d<=300).sort((a,b)=>a.d-b.d);
     for(const p of ex.slice(0,20))L.marker([p.la,p.lo],{icon:desalIcon(feedColor(p.feed),false)}).bindPopup(`<b>${esc(p.name)}</b><br>${esc(p.status)} · ${fmt(p.d,0)} km`).addTo(layerGroup);
-    for(const p of pn.slice(0,20))L.marker([p.la,p.lo],{icon:desalIcon('#b26a00',true)}).bindPopup(`<b>${esc(p.name)}</b><br>${esc(p.status)} · ${fmt(p.d,0)} km`).addTo(layerGroup);
+    for(const p of pn.slice(0,20)){const ss=statusStyle(p);L.marker([p.la,p.lo],{icon:desalIcon(ss.col,ss.hollow)}).bindPopup(`<b>${esc(p.name)}</b><br>${esc(p.status)} · ${fmt(p.d,0)} km`).addTo(layerGroup);}
     setStatus(c,`${ex.length} existing ≤150 km · ${pn.length} planned/recent ≤300 km`,ex.length||pn.length?'ok':'none');
     if(ex.length)html(c,'<b>Existing (OpenStreetMap)</b>'+table(ex.slice(0,8),[{h:'Plant',f:r=>esc(r.name)},{h:'Status',f:r=>esc(r.status)},{h:'Capacity',f:r=>esc(r.capacity||'—')},{h:'Feed',f:r=>esc(r.feed||'—')},{h:'km',num:1,f:r=>fmt(r.d,0)}]));
     if(pn.length)html(c,'<b>Planned / recent (curated)</b>'+table(pn.slice(0,8),[{h:'Plant',f:r=>esc(r.name)},{h:'Status',f:r=>esc(r.status)},{h:'m³/d',num:1,f:r=>fmt(r.capacity_m3d,0)},{h:'Power',f:r=>esc(r.power||'')},{h:'km',num:1,f:r=>fmt(r.d,0)}]));
@@ -962,7 +963,7 @@ function renderBrief(ctx){
     {cls:covCls,l:'Data coverage',v:`${okN}<small>/ ${totN}</small>`,n:ctx.wwtp?`WWTP nearby${ctx.wwtpName?': '+esc(ctx.wwtpName):''}`:'no treatment plant mapped'},
     (ctx.need?.sub?{cls:ctx.need.sub.Basic>=95?'ok':ctx.need.sub.Basic>=85?'warn':'bad',l:'Water need (region)',v:`${fmt(100-ctx.need.sub.Basic,0)}<small>% lack basic</small>`,n:`${esc(ctx.need.sub.region)} ${ctx.need.sub.year} · rural poorest: ${fmt(100-(ctx.need.sub.country.rural_q1?.Basic??100),0)}% lack basic`}:
     {cls:ctx.need?.gapRu==null?'':ctx.need.gapRu>=50?'bad':ctx.need.gapRu>=20?'warn':'ok',l:'Rural water need (national)',v:ctx.need?.gapRu!=null?`${fmt(ctx.need.gapRu,0)}<small>% lack safe water</small>`:'—',n:ctx.need?.d?`${esc(ctx.need.d.name)} rural, JMP ${esc(ctx.need.d.smdw_y||ctx.need.d.basw_y||'')}`:'no JMP estimate'}),
-    {cls:ctx.ds?.nearest?'info':ctx.ds?.nearestPlanned?'warn':'',l:'Desal nearby',v:ctx.ds?.nearest?`${fmt(ctx.ds.nearest.d,0)}<small>km</small>`:ctx.ds?.nearestPlanned?`${fmt(ctx.ds.nearestPlanned.d,0)}<small>km planned</small>`:'none ≤150 km',n:ctx.ds?.nearest?esc(ctx.ds.nearest.name):ctx.ds?.nearestPlanned?esc(ctx.ds.nearestPlanned.name):'no plant mapped'}];
+    {cls:ctx.ds?.nearest?'info':ctx.ds?.nearestPlanned?'warn':'',l:'Desal nearby',v:ctx.ds?.nearest?`${fmt(ctx.ds.nearest.d,0)}<small>km</small>`:ctx.ds?.nearestPlanned?`${fmt(ctx.ds.nearestPlanned.d,0)}<small>km ${/cancel/i.test(ctx.ds.nearestPlanned.status||'')?'cancelled':/operat|existing|built|commission|inaugur|deliver/i.test(ctx.ds.nearestPlanned.status||'')?'operating':'planned'}</small>`:'none ≤150 km',n:ctx.ds?.nearest?esc(ctx.ds.nearest.name):ctx.ds?.nearestPlanned?esc(ctx.ds.nearestPlanned.name):'no plant mapped'}];
   const verdict=[];
   if(best&&sol){verdict.push(`<b>${esc(best.src)}</b> is the lowest-energy option found: about <b>${fmt(best.pv,0)} kWp</b> of PV with ${fmt(best.batt,0)} kWh of battery and a ${fmt(best.gen,0)} kVA standby set, on roughly ${fmt(best.land/10000,2)} ha.`);}
   else if(!best)verdict.push('No feed water with a known salinity was found in open data; the sizing below is for seawater or reuse only, or needs a well test.');
