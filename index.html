@@ -106,6 +106,9 @@ section.card.loading>.body::before{content:"Fetching from source…";display:blo
 .desal-ico{width:14px;height:14px;transform:rotate(45deg);border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.4)}
 .sun-ico{width:18px;height:18px;border-radius:50%;background:#f3a81c;border:2px solid #7a4a00;box-shadow:0 0 0 3px rgba(243,168,28,.35);display:flex;align-items:center;justify-content:center;font-size:11px;line-height:1;color:#3b2500;font-weight:700}
 .sun-ico.hollow{background:#fff7e0}
+.econ-in{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;margin:8px 0}
+.econ-in label{display:flex;flex-direction:column;font-size:11px;color:var(--muted,#667)}
+.econ-in input{width:100%;box-sizing:border-box;font-size:12px;padding:3px 5px}
 
 @media (max-width:860px){
   .legend{font-size:10px;padding:4px 7px;gap:0;flex-direction:row;flex-wrap:wrap;column-gap:8px;max-width:60%}
@@ -356,7 +359,7 @@ const dossier=$('#dossier');
 const cards={};
 const GROUPS=[['site','Site'],['sources','Water sources & quantity'],['quality','Water quality'],['system','Existing water system'],['energy','Solar & plant sizing'],['coverage','Data coverage']];
 const groupEl={};let progressEl=null,progressItems={};
-const SRC_LABELS={loc:'Place & elevation (OSM, Open-Meteo)',solar:'Solar & rain (NASA POWER)',osm:'Water bodies & infrastructure (OpenStreetMap)',flow:'River discharge (GloFAS)',demand:'Community & demand',usgs:'USGS gauges & wells',wqp:'Water Quality Portal (chemistry, E. coli)',util:'EPA water utility',echo:'EPA ECHO wastewater',hubeau:"Hub'Eau (eau potable, nappes, rivières)",'co-irca':'INS SIVICAP (IRCA)','co-q':'IDEAM water quality','co-st':'IDEAM stations','co-sui':'Superservicios RUPS',whymap:'WHYMAP global hydrogeology',need:'Water access (WHO/UNICEF JMP)',desal:'Desalination plants nearby',gebco:'GEBCO sea depth','br-st':'ANA hydromet network','br-gw':'RIMAS groundwater wells','br-ete':'ANA sewage plants','br-note':'Brazil quality (pending)',wpdx:'WPdx water points',bgs:'Africa Groundwater Atlas (BGS)',portals:'National portals',nat:'National network',grid:'Electricity grid (OSM, HIFLD, IPSE ZNI, World Bank)',feed:'Feed-water sizing',cov:'Coverage report'};
+const SRC_LABELS={loc:'Place & elevation (OSM, Open-Meteo)',solar:'Solar & rain (NASA POWER)',osm:'Water bodies & infrastructure (OpenStreetMap)',flow:'River discharge (GloFAS)',demand:'Community & demand',usgs:'USGS gauges & wells',wqp:'Water Quality Portal (chemistry, E. coli)',util:'EPA water utility',echo:'EPA ECHO wastewater',hubeau:"Hub'Eau (eau potable, nappes, rivières)",'co-irca':'INS SIVICAP (IRCA)','co-q':'IDEAM water quality','co-st':'IDEAM stations','co-sui':'Superservicios RUPS',whymap:'WHYMAP global hydrogeology',need:'Water access (WHO/UNICEF JMP)',desal:'Desalination plants nearby',gebco:'GEBCO sea depth','br-st':'ANA hydromet network','br-gw':'RIMAS groundwater wells','br-ete':'ANA sewage plants','br-note':'Brazil quality (pending)',wpdx:'WPdx water points',bgs:'Africa Groundwater Atlas (BGS)',portals:'National portals',nat:'National network',grid:'Electricity grid (OSM, HIFLD, IPSE ZNI, World Bank)',feed:'Feed-water sizing',econ:'Energy cost: grid vs solar',cov:'Coverage report'};
 let scanT0=0,scanTimer=null;
 function scaffold(){dossier.innerHTML='';progressEl=document.createElement('div');progressEl.className='status';progressEl.innerHTML='<div class="hd"><span>Scanning…</span><span class="t">0 s</span></div><ul></ul>';dossier.appendChild(progressEl);progressItems={};scanT0=Date.now();clearInterval(scanTimer);scanTimer=setInterval(()=>{const t=progressEl.querySelector('.hd .t');if(t&&!progressEl.classList.contains('complete'))t.textContent=Math.round((Date.now()-scanT0)/1000)+' s';},1000);for(const [id,label] of GROUPS){const g=document.createElement('div');g.className='grp';g.id='g-'+id;g.hidden=true;g.innerHTML=`<h3>${esc(label)}</h3>`;dossier.appendChild(g);groupEl[id]=g;}}
 function progress(id,state){if(!progressEl)return;let it=progressItems[id];if(!it){it=document.createElement('li');it.innerHTML=`<i></i><span>${esc(SRC_LABELS[id]||id)}</span><em class="ms"></em>`;it.dataset.t0=Date.now();progressEl.querySelector('ul').appendChild(it);progressItems[id]=it;}it.className=state;if(state!=='run')it.querySelector('.ms').textContent=((Date.now()-(+it.dataset.t0))/1000).toFixed(1)+' s';const n=Object.values(progressItems),d=n.filter(x=>x.className!=='run').length,bad=n.filter(x=>x.className==='err').length;progressEl.querySelector('.hd span').textContent=d<n.length?`Fetching ${d}/${n.length} sources…`:`Scan complete — ${n.length} sources${bad?`, ${bad} failed`:''}`;}
@@ -1008,6 +1011,59 @@ async function adGrid(lat,lon,r,cc,loc){
   return g;
 }
 
+// ---------- energy cost: grid vs solar vs hybrid ----------
+let tariffsData=null;async function loadTariffs(){if(tariffsData)return tariffsData;try{tariffsData=await getJSON('data/tariffs.json');}catch(e){tariffsData={countries:{},us_states:{}};}return tariffsData;}
+async function tariffFor(ctx){const T=await loadTariffs();const cc=ctx.loc?.cc;const st=ctx.loc?.addr?.state;
+  if(ctx.grid?.cls==='zni'&&T.co_zni)return{v:T.co_zni.usd_kwh,src:'Superservicios ZNI 2T-2025 (diesel generation charge)',url:T.co_zni.src,note:T.co_zni.note};
+  if((cc==='US'||cc==='PR')&&st&&T.us_states[st]!=null)return{v:T.us_states[st]/100,src:`EIA 2024 average, ${st}`,url:'https://www.eia.gov/electricity/state/'};
+  if(T.countries[cc])return{v:T.countries[cc].usd_kwh,src:`${T.countries[cc].src.includes('http')?'tariff table':T.countries[cc].src} ${T.countries[cc].year}`,url:T.countries[cc].src.includes('http')?T.countries[cc].src:null,note:T.countries[cc].note};
+  try{const a3=countryA3(cc);const j=await getJSON(`https://api.worldbank.org/v2/country/${a3}/indicator/IC.ELC.PRI.KH.DB1619?format=json&per_page=8`,{timeout:20000});const d=(j&&j[1]||[]).find(x=>x.value!=null);if(d)return{v:d.value/100,src:`World Bank Doing Business ${d.date} (commercial, warehouse case)`,url:'https://data.worldbank.org/indicator/IC.ELC.PRI.KH.DB1619'};}catch(e){}
+  return{v:0.20,src:'no tariff data — assumed 0.20 $/kWh',url:null};}
+function econCompute(p){
+  // p: E kWh/day, pv kWp, batt kWh, gen kVA, tariff, pvCost, battCost, genCost, diesel $/L, lineKm, lineCost $/km, conn $, disc, life, om, rel ('fair'|'unreliable'|'poor'|null), grid cls
+  const crf=p.disc>0?p.disc*Math.pow(1+p.disc,p.life)/(Math.pow(1+p.disc,p.life)-1):1/p.life;
+  const Eyr=p.E*365;
+  const npv=(capex,annual,replace10)=>{let v=capex;for(let y=1;y<=p.life;y++){v+=annual/Math.pow(1+p.disc,y);}if(replace10&&p.life>10)v+=replace10/Math.pow(1+p.disc,10);return v;};
+  const fuelKwh=0.35*p.diesel; // L/kWh × $/L
+  const out={};
+  // Solar off-grid: PV + battery + genset backup (backup share by sun)
+  const backup=p.backupShare;const capS=p.pv*p.pvCost+p.batt*p.battCost+p.gen*p.genCost;
+  const annS=capS*p.om+Eyr*backup*fuelKwh;
+  out.solar={name:'Solar off-grid (PV + battery + genset)',capex:capS,annual:annS,npv:npv(capS,annS,p.batt*p.battCost)};
+  // Grid: connection + energy; if unreliable keep a genset and burn fuel for outage share
+  const outage=p.rel==='poor'?0.25:p.rel==='unreliable'?0.10:0.02;
+  const capG=p.lineKm*p.lineCost+p.conn+(p.rel&&p.rel!=='fair'?p.gen*p.genCost:0);
+  const annG=Eyr*(1-outage)*p.tariff+Eyr*outage*fuelKwh+capG*0.01;
+  out.grid={name:p.cls==='zni'?'Local diesel grid (ZNI)':'Grid connection',capex:capG,annual:annG,npv:npv(capG,annG,0)};
+  // Hybrid: grid-tied PV without battery, PV covers daytime share
+  const dayShare=0.65;const capH=p.pv*dayShare*p.pvCost+p.lineKm*p.lineCost+p.conn;
+  const annH=capH*p.om+Eyr*(1-dayShare)*p.tariff;
+  out.hybrid={name:'Grid-tied PV (no battery)',capex:capH,annual:annH,npv:npv(capH,annH,0)};
+  for(const k in out){const o=out[k];o.lcoe=(o.npv*crf)/Eyr;o.perM3=p.Q?o.lcoe*p.E/p.Q:null;}
+  // breakeven tariff: grid NPV == solar NPV
+  const gridNonEnergy=npv(capG,Eyr*outage*fuelKwh+capG*0.01,0);const pvFactor=(()=>{let f=0;for(let y=1;y<=p.life;y++)f+=1/Math.pow(1+p.disc,y);return f;})();
+  out.breakeven=(out.solar.npv-gridNonEnergy)/(Eyr*(1-outage)*pvFactor);
+  out.crf=crf;return out;}
+async function adEconomics(ctx){
+  const c=card('econ','Energy cost — grid vs solar vs hybrid','energy');
+  const best=ctx.best;if(!best||!best.E){setStatus(c,'needs a sized feed option','warn');html(c,'<div class="none">No feed water with an energy figure yet.</div>');return;}
+  const tf=await tariffFor(ctx);const gd=ctx.grid||{};
+  const island=/^(BS|KN|AG|LC|VC|GD|DM|BB|TT|KY|TC|VG|VI|AW|CW|BQ|SX|MF|BL|GP|MQ|HT|JM|DO|CU|PR|BM|MV|FJ|KI|TV|MH|TO|WS|VU|SB|PF|NC|CV|MU|SC|KM|ST|TL|CY|MT)$/.test(ctx.loc?.cc||'');
+  const defaults={E:best.E,Q:ctx.Q,pv:best.pv,batt:best.batt,gen:best.gen,tariff:tf.v,pvCost:island?1300:1000,battCost:350,genCost:250,diesel:island?1.3:1.0,lineKm:gd.cls==='near'?Math.max(0.3,gd.dLine||0.5):gd.cls==='mid'?gd.dLine:gd.cls==='unmapped'?2:gd.cls==='zni'?0.5:(gd.dLine||15),lineCost:30000,conn:15000,disc:0.08,life:20,om:0.02,rel:gd.rel||null,cls:gd.cls||'none',backupShare:ctx.solar?.worst>=4.5?0.05:ctx.solar?.worst>=3.5?0.10:0.20};
+  const ids=['tariff','pvCost','battCost','genCost','diesel','lineKm','lineCost','conn','disc','life','om'];
+  const labels={tariff:'Grid tariff $/kWh',pvCost:'PV installed $/kWp',battCost:'Battery $/kWh',genCost:'Genset $/kVA',diesel:'Diesel $/L',lineKm:'Line extension km',lineCost:'Line cost $/km',conn:'Connection/transformer $',disc:'Discount rate',life:'Life years',om:'O&M %/yr of capex'};
+  const wrap=document.createElement('div');wrap.className='econ';
+  wrap.innerHTML=`<div class="hint">Energy to produce <b>${fmt(best.E,0)} kWh/day</b> for ${fmt(ctx.Q,0)} m³/d (${esc(best.src)}, ${fmt(best.sec,1)} kWh/m³). Tariff source: ${esc(tf.src)}${tf.url?` <a href="${esc(tf.url)}" target="_blank" rel="noopener">↗</a>`:''}${tf.note?` — ${esc(tf.note)}`:''}. Grid: ${esc(gd.label||'unknown')}${gd.rel?`, reliability ${esc(gd.rel)}`:''}.</div><div class="econ-in">${ids.map(k=>`<label class="small">${labels[k]}<input type="number" step="any" data-k="${k}" value="${defaults[k]}"></label>`).join('')}</div><div class="econ-out"></div>`;
+  c.body.appendChild(wrap);const out=wrap.querySelector('.econ-out');
+  const run=()=>{const p={...defaults};wrap.querySelectorAll('input[data-k]').forEach(i=>{const v=parseFloat(i.value);if(!isNaN(v))p[i.dataset.k]=v;});const r=econCompute(p);
+    const rows=[r.solar,r.hybrid,r.grid].sort((a,b)=>a.npv-b.npv);const win=rows[0];
+    out.innerHTML=table(rows,[{h:'Option',f:x=>(x===win?'<b>★ ':'')+esc(x.name)+(x===win?'</b>':'')},{h:'Capex $',num:1,f:x=>fmt(x.capex,0)},{h:'$/year',num:1,f:x=>fmt(x.annual,0)},{h:'$/kWh',num:1,f:x=>fmt(x.lcoe,3)},{h:'$/m³ energy',num:1,f:x=>fmt(x.perM3,2)},{h:`NPV ${p.life} yr $`,num:1,f:x=>fmt(x.npv,0)}])
+      +`<div><b>Verdict:</b> ${esc(win.name)} is cheapest over ${p.life} years at ${fmt(win.lcoe,3)} $/kWh (${fmt(win.perM3,2)} $/m³ of energy). Solar off-grid beats the grid when the tariff is above <b>${fmt(r.breakeven,3)} $/kWh</b>${p.tariff>=r.breakeven?' — it is.':` — current ${fmt(p.tariff,3)}.`} ${p.cls==='zni'?'In a ZNI the "grid" is diesel a few hours a day, so solar also buys 24 h supply.':''}${p.rel&&p.rel!=='fair'?' Grid cost includes a genset and fuel for outages.':''}</div>
+      <div class="hint">First-order model: CRF ${fmt(r.crf,3)}; backup fuel share ${fmt(p.backupShare*100,0)} % for off-grid (set by worst-month sun); grid-tied PV covers 65 % of energy; battery replaced at year 10; genset fuel 0.35 L/kWh. Excludes RO plant capex, water storage, membranes and labour, which are the same in every option. Edit any input and the table recomputes.</div>`;
+    ctx.econ={win:win.name,breakeven:r.breakeven,tariff:p.tariff,solar:r.solar,grid:r.grid,hybrid:r.hybrid};};
+  wrap.addEventListener('input',run);run();
+  setStatus(c,`${esc(ctx.econ.win)} · breakeven ${fmt(ctx.econ.breakeven,2)} $/kWh`,ctx.econ.win.startsWith('Solar')?'ok':'');
+}
 function gridStrategy(ctx,c){
   const gd=ctx.grid;if(!gd)return;c=c||cards.feed;if(!c)return;c.body.querySelectorAll('.gridstrat').forEach(x=>x.remove());{const strat=gd.cls==='near'&&gd.rel==='fair'?'Grid-tied PV (no battery, small genset or none): grid is close and nationally reliable — size PV for daytime RO and buy night-time energy.':gd.cls==='near'?'Hybrid: grid is close but unreliable — keep the battery and genset sized above; grid lowers fuel use, not the capex.':gd.cls==='zni'?`Off-grid design: the locality is in a non-interconnected zone with ~${fmt(gd.zni?.hMed,0)} h/day of diesel service — PV + battery sized above; the existing genset can be the standby.`:gd.cls==='unmapped'?'Grid not mapped here but the country is electrified — design as hybrid (PV + small battery + genset) and confirm the nearest MV line with the utility; if a line is within ~2 km, drop the battery.':gd.cls==='mid'?`Off-grid design unless a ${fmt(gd.dLine,0)} km line extension (${gd.kv?fmt(gd.kv,0)+' kV':'MV'}) is cheaper than the battery + genset.`:'Off-grid design: no grid within reach — PV + battery + genset as sized above.';html(c,`<div class="gridstrat"><b>Grid strategy:</b> ${esc(strat)} <span class="hint">(${esc(gd.label||'')}${gd.rel?'; national reliability '+esc(gd.rel):''})</span></div>`);}
 }
@@ -1074,6 +1130,7 @@ function renderBrief(ctx){
   if(ctx.need?.gapRu!=null&&ctx.need.gapRu>=20)verdict.push(`Nationally, ${fmt(ctx.need.gapRu,0)}% of the rural population lacks safely managed water (JMP), which supports prioritising this region.`);
   if(ctx.ds?.nearest)verdict.push(`An existing desalination plant (${esc(ctx.ds.nearest.name)}) operates ${fmt(ctx.ds.nearest.d,0)} km away — a reference for feed water, permits and operators.`);
   if(ctx.grid){const gd=ctx.grid;if(gd.cls==='zni')verdict.push(`The locality is in Colombia's non-interconnected zone with about ${fmt(gd.zni?.hMed,0)} h/day of generator service, so a solar-battery plant is the realistic design and can share the existing genset.`);else if(gd.cls==='unmapped')verdict.push(`No grid line is mapped in OpenStreetMap here, although the country is ${fmt(gd.wb['EG.ELC.ACCS.ZS'].v,0)} % electrified — confirm the nearest line before choosing between hybrid and off-grid.`);else if(gd.cls==='none'||gd.cls==='far')verdict.push(`No grid line is mapped within reach (${esc(gd.label)}), so plan fully off-grid.`);else if(gd.cls==='near'&&gd.rel==='poor')verdict.push(`The grid is close (${fmt(gd.dLine,1)} km) but nationally unreliable (${esc(gd.rel)}), so keep storage and a standby set.`);else if(gd.cls==='near')verdict.push(`A ${gd.kv?fmt(gd.kv,0)+' kV ':''}line passes ${fmt(gd.dLine,1)} km away${gd.util?' ('+esc(gd.util.name)+')':''}, so a grid-tied PV plant without battery is an option.`);}
+  if(ctx.econ)verdict.push(`Energy economics: <b>${esc(ctx.econ.win)}</b> is the cheapest way to power the plant over 20 years; solar off-grid wins above a tariff of ${fmt(ctx.econ.breakeven,2)} $/kWh (local ${fmt(ctx.econ.tariff,2)}).`);
   if(sol&&sol.worst<3)verdict.push(`Winter sun is weak (${fmt(sol.worst,1)} kWh/m²/d); expect a large array or seasonal generator use.`);
   b.innerHTML=`<div><div class="place">${esc(name)}</div><div class="sub">${esc(region)} · ${ctx.lat.toFixed(4)}, ${ctx.lon.toFixed(4)} · ${ctx.r} km radius</div></div><div class="kpi">${tiles.map(t=>`<div class="${t.cls}"><span class="l">${t.l}</span><span class="v">${t.v}</span><span class="n" title="${t.n.replace(/<[^>]+>/g,'')}">${t.n}</span></div>`).join('')}</div><div class="verdict">${verdict.join(' ')}</div>`;
   g.insertBefore(b,g.querySelector('h3').nextSibling);
@@ -1130,10 +1187,11 @@ async function scan(lat,lon){
     const ctx={lat,lon,r,loc,Q:dem.Q,pop:dem.pop,assumed:dem.assumed,salineArea:!!gw.saline,need,ds,solar,coast:osm.coast,wells:osm.wells,tds:null,wwtp:false,utility:null,micro:null,wwtpName:null};
     const nat=await natP;Object.assign(ctx,nat);
     ctx.grid=await Promise.race([gridP,new Promise(r=>setTimeout(()=>r(null),40000))]);
-    if(!ctx.grid)gridP.then(g=>{ctx.grid=g;gridStrategy(ctx);renderBrief(ctx);});
+    if(!ctx.grid)gridP.then(async g=>{ctx.grid=g;gridStrategy(ctx);if(cards.econ){cards.econ.el.remove();delete cards.econ;}await adEconomics(ctx);renderBrief(ctx);});
     if(nat.wellsAdd)ctx.wells+=nat.wellsAdd;
     ctx.wwtp=coverage.some(x=>/Wastewater treatment \((OSM|EPA|ANA)\)/.test(x.topic)&&x.state==='ok');
     adFeedOptions(ctx);
+    await adEconomics(ctx);
     adCoverage();
     renderBrief(ctx);
     scanDone();
