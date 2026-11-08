@@ -1,7 +1,12 @@
-# Geofabrik region paths (one per line). Core set for v1; add more as DB size allows (free tier 500 MB).
+# Geofabrik region paths (one per line). Budget: Supabase free tier 500 MB; Colombia ≈ 58 MB after slimming.
 central-america
 south-america/colombia
 south-america/venezuela
 north-america/us/florida
-north-america/us/california
 africa/kenya
+# candidates when budget allows (check the size report at the end of each run):
+# north-america/us/california   (very dense, ~100 MB+)
+# south-america/brazil/nordeste
+# south-america/peru
+# africa/senegal-and-gambia
+# africa/tanzania
