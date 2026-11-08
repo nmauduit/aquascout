@@ -72,12 +72,12 @@ ul.plain{margin:0;padding-left:18px}
 .leaflet-container{font:inherit}
 .legend{position:absolute;bottom:12px;left:12px;z-index:500;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:6px 10px;font-size:12px;display:flex;flex-direction:column;gap:2px}
 .legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px}
-#mapwrap{position:relative;min-width:0}
+#mapwrap{position:relative;min-width:0;min-height:320px}
 .busy{animation:pulse 1.2s infinite}
 @keyframes pulse{50%{opacity:.4}}
 @media (prefers-reduced-motion:reduce){.busy{animation:none}}
 @media (max-width:860px){
-  #app{grid-template-columns:1fr;grid-template-rows:46vh 1fr}
+  #app{grid-template-columns:1fr;grid-template-rows:max(46vh,320px) 1fr}
   #side{border-left:0;border-top:1px solid var(--line)}
 }
 
@@ -125,7 +125,7 @@ section.card.loading>.body::before{content:"Fetching from source…";display:blo
 @media (max-width:860px){
   .legend{font-size:10px;padding:4px 7px;gap:0;flex-direction:column}
   .legend i{width:8px;height:8px;margin-right:3px}
-  .needlegend{font-size:10px;padding:4px 7px;right:8px;bottom:8px}
+  .needlegend{font-size:10px;padding:4px 7px;right:8px;bottom:26px}
   .needlegend .hint{display:none}
   .needlegend b{font-size:10px}
 }
