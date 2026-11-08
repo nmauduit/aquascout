@@ -411,13 +411,16 @@ function adLocalNeed(ctx,osm,dem){
   const c=card('localneed','Water need at this location (estimate)','site');
   const d=ctx.need&&ctx.need.d,sub=ctx.need&&ctx.need.sub;
   if(!d&&!sub){setStatus(c,'no JMP data','none');html(c,'<div class="none">No WHO/UNICEF estimate for this country, so no location estimate.</div>');return null;}
-  // settlement type
-  const pt=(dem.place||'').toLowerCase();let set,setWhy;
-  if(dem.placeD!=null&&dem.placeD>5){set='rural';setWhy=`nearest populated place is ${fmt(dem.placeD,0)} km away`;}
-  else if(/^(city)$/.test(pt)){set='urban';setWhy=`OSM: ${dem.placeName} is a city`;}
-  else if(/^(town|suburb|quarter|borough|neighbourhood)$/.test(pt)){set=(dem.placePop&&dem.placePop<5000)?'rural':'urban';setWhy=`OSM: ${dem.placeName} (${pt}${dem.placePop?', '+fmt(dem.placePop,0)+' people':''})`;}
-  else if(/village|hamlet|isolated|locality|farm/.test(pt)){set='rural';setWhy=`OSM: ${dem.placeName} is a ${pt}`;}
-  else{set=ctx.pop<=5000?'rural':'urban';setWhy=pt?`OSM place type ${pt}`:'no OSM place tag — judged from community size';}
+  // settlement type: the point belongs to a place if it lies within its footprint (radius scaled by population, ~5,000 people/km²)
+  const foot=p=>Math.max(1.5,1.5*Math.sqrt((p.pop||0)/5000/Math.PI));
+  const pls=(osm&&osm.places||[]).filter(p=>p.d!=null&&p.pop>0);
+  const covering=pls.filter(p=>p.d<=foot(p)).sort((a,b)=>b.pop-a.pop);
+  let set,setWhy;const home=covering[0];
+  if(home){const pt=String(home.place||'').toLowerCase();
+    if(pt==='city'||(/town|suburb|quarter|borough|neighbourhood/.test(pt)&&home.pop>=5000)){set='urban';setWhy=`inside the footprint of ${home.name} (${pt}, ${fmt(home.pop,0)} people, ${fmt(home.d,1)} km from its centre)`;}
+    else{set='rural';setWhy=`${home.name} (${pt}, ${fmt(home.pop,0)} people, ${fmt(home.d,1)} km)`;}}
+  else if(pls.length){const n=pls.sort((a,b)=>a.d-b.d)[0];set='rural';setWhy=`outside any mapped settlement — nearest is ${n.name} (${n.place}, ${fmt(n.pop,0)}) at ${fmt(n.d,1)} km`;}
+  else{set=ctx.pop<=5000?'rural':'urban';setWhy='no populated place mapped nearby — judged from community size';}
   // baseline and adjustment (coverage scaling, bounded):
   //   cov_here = latest national coverage for this settlement type × (region / national average in the same survey)
   const g=v=>v==null?null:Math.max(0,100-v);
@@ -448,7 +451,7 @@ function adLocalNeed(ctx,osm,dem){
   const L=['low','moderate','high','critical'];let li=est==null?1:est<5?0:est<15?1:est<30?2:3;
   if(score>=2)li=Math.min(3,li+1);else if(score<=-2)li=Math.max(0,li-1);
   const level=L[li];const cls=li>=3?'bad':li>=2?'bad':li>=1?'warn':'ok';
-  setStatus(c,`${level} need · ~${fmt(est,0)}% lack basic water (${set})`,li>=2?'bad':li>=1?'warn':'ok');
+  setStatus(c,`${level} need · ~${fmt(est,0)}% lack basic water (${set})`,'ok');
   html(c,`<div style="font-size:15px"><span class="pill ${cls}">${level.toUpperCase()}</span> &nbsp;About <b>${fmt(est,0)}%</b> of people here are likely to lack even basic drinking water${estSM!=null?`, and about <b>${fmt(estSM,0)}%</b> lack safely managed water`:''}.</div>`);
   html(c,`<dl class="kv"><dt>Settlement</dt><dd><b>${set}</b> — ${esc(setWhy)}</dd>
     <dt>Regional baseline</dt><dd>${sub?`JMP region “${esc(sub.region)}” (${sub.year} survey): ${fmt(regGap,0)}% lack basic, all population`:`national: ${fmt(natTot,0)}% lack basic, all population`}</dd>
@@ -597,7 +600,7 @@ async function adOSM(lat,lon,r){
   try{
     let r2=null,lastErr=null,fromCache=null;
     const cov0=await cacheCovered(lat,lon);
-    if(cov0){try{const rows=await sbRpc('osm_near',{lat,lon,r_m:rm*2,theme_in:'water',lim:800});const el=cacheToElements(rows).filter(e=>e.d_m<=rm||(e.tags.place&&e.tags.population));r2={elements:el};fromCache=cov0;}catch(e){html(c,`<div class="hint">cache: ${esc(e.message)} — using Overpass</div>`);}}
+    if(cov0){try{const [rows,pl]=await Promise.all([sbRpc('osm_near',{lat,lon,r_m:rm,theme_in:'water',lim:800}),sbRpc('osm_places',{lat,lon,r_m:Math.max(rm*2,20000),lim:40}).catch(()=>[])]);const el=cacheToElements(rows).filter(e=>!(e.tags.place&&e.tags.population));const pe=cacheToElements(pl.map(x=>({...x,geojson:null})));r2={elements:el.concat(pe)};fromCache=cov0;}catch(e){html(c,`<div class="hint">cache: ${esc(e.message)} — using Overpass</div>`);}}
     if(!r2){const mirrors=['https://overpass-api.de/api/interpreter','https://overpass.kumi.systems/api/interpreter','https://lz4.overpass-api.de/api/interpreter'];
     for(const m of mirrors){try{r2=await getJSON(m+'?data='+encodeURIComponent(q),{timeout:70000});break;}catch(e){lastErr=e;html(c,`<div class="hint">${esc(m.replace('https://','').split('/')[0])}: ${esc(e.message)} — trying next mirror</div>`);}}}
     if(!r2)throw lastErr||new Error('all Overpass mirrors failed');
