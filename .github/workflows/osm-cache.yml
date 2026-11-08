@@ -20,6 +20,27 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq osmium-tool postgresql-client
+      - name: Check SUPABASE_DB_URL (without printing it)
+        run: |
+          python3 - <<'PY'
+          import os, re, sys
+          v = os.environ.get("SUPABASE_DB_URL", "")
+          s = v.strip().strip('"').strip("'").strip()
+          probs = []
+          if not v: probs.append("secret is empty or missing")
+          if v != v.strip(): probs.append("leading/trailing spaces or newline (auto-fixed)")
+          if s[:1] in "\"'": probs.append("wrapped in quotes (auto-fixed)")
+          if not re.match(r"^postgres(ql)?://", s): probs.append("does not start with postgresql://")
+          if "[YOUR-PASSWORD]" in s or "YOUR-PASSWORD" in s: probs.append("password placeholder still in the string")
+          if "pooler.supabase.com" not in s: probs.append("host is not *.pooler.supabase.com (use the Session/Shared pooler string)")
+          if ":5432/" not in s: probs.append("port is not 5432")
+          m = re.match(r"^postgres(?:ql)?://([^:@/]+)(?::[^@]*)?@([^:/]+)", s)
+          print("user:", m.group(1) if m else "?", "| host:", m.group(2) if m else "?", "| length:", len(s))
+          print("problems:", "; ".join(probs) or "none")
+          fatal = [p for p in probs if "auto-fixed" not in p]
+          sys.exit(1 if fatal else 0)
+          PY
+          psql "--dbname=$(echo "$SUPABASE_DB_URL" | xargs)" -tAc "select 'connected: '||current_user||' / postgis '||postgis_lib_version();"
       - name: Load regions
         run: |
           set -e

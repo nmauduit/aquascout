@@ -7,7 +7,8 @@ Needs SUPABASE_DB_URL in the environment (Postgres connection string).
 import json, os, subprocess, sys, tempfile
 
 region, theme, path = sys.argv[1], sys.argv[2], sys.argv[3]
-db = os.environ["SUPABASE_DB_URL"]
+db = os.environ.get("SUPABASE_DB_URL", "").strip().strip('"').strip("'").strip()
+if db.startswith("postgres://"): db = "postgresql://" + db[len("postgres://"):]
 
 WATER_KEEP = {"natural": {"water", "coastline", "spring"},
               "waterway": {"river", "canal", "stream"},
@@ -74,7 +75,7 @@ on conflict (region) do update set feat_{theme}=excluded.feat_{theme},
 """
 sqlf = tmp.name + ".sql"
 open(sqlf, "w").write(sql)
-subprocess.run(["psql", db, "-v", "ON_ERROR_STOP=1", "-q", "-f", sqlf], check=True)
+subprocess.run(["psql", "--dbname=" + db, "-v", "ON_ERROR_STOP=1", "-q", "-f", sqlf], check=True)
 os.unlink(sqlf)
 os.unlink(tmp.name)
 print("done")
