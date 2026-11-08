@@ -483,11 +483,12 @@ function adLocalNeed(ctx,osm,dem){
   // a documented crisis or a quality failure sets a floor on the need level
   if(cr)li=Math.max(li,cr.severity==='severe'?2:1);else if(problems.length)li=Math.max(li,1);
   const level=L[li];const cls=li>=3?'bad':li>=2?'bad':li>=1?'warn':'ok';
-  let contLvlF=contLvl;if(cr&&cr.type.includes('shortage'))contLvlF=cr.severity==='severe'?'poor':(contLvl==='poor'?'poor':'unreliable');
+  const contLvl0=av==null?null:av<60?'poor':av<80?'unreliable':av<95?'mostly reliable':'reliable';
+  let contLvlF=contLvl0;if(cr&&cr.type.includes('shortage'))contLvlF=cr.severity==='severe'?'poor':(contLvl0==='poor'?'poor':'unreliable');
   if(problems.length){setStatus(c,`supply problem · ${level} need · ~${fmt(est,0)}% lack basic water (${set})`,'bad');progress(c.id,'done');c.el.classList.add('alert');}
   else setStatus(c,`${level} need · ~${fmt(est,0)}% lack basic water (${set})`,'ok');
   if(problems.length)html(c,`<div class="why"><b>Supply problem — this justifies a new plant.</b> ${problems.map(x=>x[0].toUpperCase()+x.slice(1)).join('; ')}.${cr?`<div class="hint">${cr.sources.map(([t,u])=>`<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t)}</a>`).join(' · ')}</div>`:''}</div>`);
-  html(c,`<div style="font-size:15px"><span class="pill ${cls}">${level.toUpperCase()}</span> &nbsp;About <b>${fmt(est,0)}%</b> of people here are likely to lack even basic drinking water${estSM!=null?`, and about <b>${fmt(estSM,0)}%</b> lack safely managed water`:''}.</div>`);
+  html(c,`<div style="font-size:15px"><span class="pill ${cls}">${level.toUpperCase()}</span> &nbsp;About <b>${fmt(est,0)}%</b> of people here are likely to lack even basic drinking water${estSM!=null?`, and about <b>${fmt(estSM,0)}%</b> lack safely managed water`:''}.${problems.length?' Being connected is not the problem here: the supply that exists fails (see above).':''}</div>`);
   html(c,`<dl class="kv"><dt>Settlement</dt><dd><b>${set}</b> — ${esc(setWhy)}</dd>
     <dt>Regional baseline</dt><dd>${sub?`JMP region “${esc(sub.region)}” (${sub.year} survey): ${fmt(regGap,0)}% lack basic, all population`:`national: ${fmt(natTot,0)}% lack basic, all population`}</dd>
     <dt>Method</dt><dd>${covSet!=null?`latest national ${set} coverage ${fmt(covSet,0)}% (JMP ${esc(d&&d.basw_y||'')})${rel!=null?` × ${fmt(rel,2)} (${esc(relWhy)})`:''}`:`no ${set}/urban split published for this country — ${sub?'regional':'national'} figure used as is`} = <b>${fmt(covHere,0)}%</b> with at least basic water</dd></dl>`);
