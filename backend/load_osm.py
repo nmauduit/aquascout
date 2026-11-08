@@ -13,7 +13,7 @@ if db.startswith("postgres://"): db = "postgresql://" + db[len("postgres://"):]
 WATER_KEEP = {"natural": {"water", "coastline", "spring"},
               "waterway": {"river", "canal", "stream"},
               "man_made": {"water_well", "water_works", "wastewater_plant", "desalination_plant", "reservoir_covered",
-                            "water_tower", "pumping_station", "storage_tank"},
+                            "water_tower", "pumping_station"},
               "landuse": {"reservoir", "salt_pond", "basin"}}
 POWER_KEEP = {"power": {"line", "minor_line", "cable", "substation", "plant", "generator"}}
 
@@ -63,13 +63,15 @@ create temp table stg (osm_id text, theme text, region text, tags jsonb, gj text
 delete from osm_feat where region = '{region}' and theme = '{theme}';
 insert into osm_feat (osm_id, theme, region, tags, geom, center)
 select osm_id, theme, region, tags,
-       st_multi(st_makevalid(st_setsrid(st_geomfromgeojson(gj),4326))),
-       st_pointonsurface(st_makevalid(st_setsrid(st_geomfromgeojson(gj),4326)))
-from stg
-where st_geomfromgeojson(gj) is not null
+       st_multi(case when st_npoints(g) > 8 then st_simplifypreservetopology(g, 0.0003) else g end),
+       st_pointonsurface(g)
+from (select osm_id, theme, region, tags, st_makevalid(st_setsrid(st_geomfromgeojson(gj),4326)) g from stg where gj is not null) s
+where g is not null and not st_isempty(g)
+  -- slim: unnamed ponds under 1 ha add nothing to a feasibility screen
+  and not (tags->>'natural' = 'water' and not tags ? 'name' and st_area(g::geography) < 10000)
 on conflict (region, theme, osm_id) do update set tags=excluded.tags, geom=excluded.geom, center=excluded.center, loaded_at=now();
 insert into osm_region (region, feat_{theme}, bbox, loaded_at)
-select '{region}', count(*), st_envelope(st_extent(center)::geometry), now() from osm_feat where region='{region}'
+select '{region}', count(*) filter (where theme = '{theme}'), st_envelope(st_extent(center)::geometry), now() from osm_feat where region='{region}'
 on conflict (region) do update set feat_{theme}=excluded.feat_{theme},
   bbox = st_envelope(st_union(coalesce(osm_region.bbox, excluded.bbox), excluded.bbox)), loaded_at=now();
 """

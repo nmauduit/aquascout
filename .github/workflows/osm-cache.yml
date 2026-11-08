@@ -52,7 +52,7 @@ jobs:
             curl -sSL --retry 3 -o "$SLUG.osm.pbf" "https://download.geofabrik.de/$R-latest.osm.pbf"
             osmium tags-filter -o water.pbf "$SLUG.osm.pbf" \
               natural=water,coastline,spring waterway=river,canal,stream \
-              man_made=water_well,water_works,wastewater_plant,desalination_plant,reservoir_covered,water_tower,pumping_station,storage_tank \
+              man_made=water_well,water_works,wastewater_plant,desalination_plant,reservoir_covered,water_tower,pumping_station \
               landuse=reservoir,salt_pond,basin place --overwrite
             osmium export water.pbf -f geojsonseq -o water.geojsonseq --geometry-types=point,linestring,polygon --add-unique-id=type_id --overwrite
             python3 backend/load_osm.py "$SLUG" water water.geojsonseq
