@@ -11,7 +11,7 @@ on:
 jobs:
   load:
     runs-on: ubuntu-latest
-    timeout-minutes: 300
+    timeout-minutes: 240
     env:
       SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
     steps:
@@ -44,12 +44,14 @@ jobs:
       - name: Load regions
         run: |
           set -e
+          FAILED=""
           REGIONS="${{ github.event.inputs.regions }}"
           if [ -z "$REGIONS" ]; then REGIONS=$(grep -v '^#' backend/regions.txt | tr '\n' ' '); fi
           for R in $REGIONS; do
             SLUG=$(basename "$R")
             echo "=== $R"
-            curl -sSL --retry 3 -o "$SLUG.osm.pbf" "https://download.geofabrik.de/$R-latest.osm.pbf"
+            if ! curl -sSL --retry 4 --retry-delay 20 --connect-timeout 30 --max-time 1200 -o "$SLUG.osm.pbf" "https://download.geofabrik.de/$R-latest.osm.pbf"; then echo "!! download failed for $R — skipping"; FAILED="$FAILED $R"; continue; fi
+            ls -la "$SLUG.osm.pbf"
             osmium tags-filter -o water.pbf "$SLUG.osm.pbf" \
               natural=water,coastline,spring waterway=river,canal,stream \
               man_made=water_well,water_works,wastewater_plant,desalination_plant,reservoir_covered,water_tower,pumping_station \
@@ -61,6 +63,7 @@ jobs:
             python3 backend/load_osm.py "$SLUG" power power.geojsonseq
             rm -f "$SLUG.osm.pbf" water.pbf power.pbf water.geojsonseq power.geojsonseq
           done
+          if [ -n "$FAILED" ]; then echo "Regions that failed to download:$FAILED"; fi
       - name: Reclaim space (VACUUM FULL) and report size
         run: |
           psql "--dbname=$(echo "$SUPABASE_DB_URL" | xargs)" -c "set statement_timeout = 0; vacuum (full, analyze) osm_feat;"
