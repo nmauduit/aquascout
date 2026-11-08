@@ -532,7 +532,7 @@ const dossier=$('#dossier');
 const cards={};
 const GROUPS=[['site','Site'],['sources','Water sources & quantity'],['quality','Water quality'],['system','Existing water system'],['energy','Solar & plant sizing'],['coverage','Data coverage']];
 const groupEl={};let progressEl=null,progressItems={};
-const SRC_LABELS={alts:'Alternatives to a new plant',loc:'Place & elevation (OSM, Open-Meteo)',solar:'Solar & rain (NASA POWER)',osm:'Water bodies & infrastructure (OpenStreetMap)',flow:'River discharge (GloFAS)',demand:'Community & demand',usgs:'USGS gauges & wells',wqp:'Water Quality Portal (chemistry, E. coli)',util:'EPA water utility',echo:'EPA ECHO wastewater',hubeau:"Hub'Eau (eau potable, nappes, rivières)",'co-irca':'INS SIVICAP (IRCA)','co-q':'IDEAM water quality','co-st':'IDEAM stations','co-sui':'Superservicios RUPS',whymap:'WHYMAP global hydrogeology',need:'Water access (WHO/UNICEF JMP)',localneed:'Water need at this location',desal:'Desalination plants nearby',gebco:'GEBCO sea depth','br-st':'ANA hydromet network','br-gw':'RIMAS groundwater wells','br-ete':'ANA sewage plants','br-note':'Brazil quality (pending)',wpdx:'WPdx water points',bgs:'Africa Groundwater Atlas (BGS)',portals:'National portals',nat:'National network',grid:'Electricity grid (OSM, HIFLD, IPSE ZNI, World Bank)',feed:'Feed-water sizing',econ:'Energy cost: grid vs solar',cov:'Coverage report'};
+const SRC_LABELS={hw:'Wastewater plants (HydroWASTE)',sal:'Measured salinity (global DB)',alts:'Alternatives to a new plant',loc:'Place & elevation (OSM, Open-Meteo)',solar:'Solar & rain (NASA POWER)',osm:'Water bodies & infrastructure (OpenStreetMap)',flow:'River discharge (GloFAS)',demand:'Community & demand',usgs:'USGS gauges & wells',wqp:'Water Quality Portal (chemistry, E. coli)',util:'EPA water utility',echo:'EPA ECHO wastewater',hubeau:"Hub'Eau (eau potable, nappes, rivières)",'co-irca':'INS SIVICAP (IRCA)','co-q':'IDEAM water quality','co-st':'IDEAM stations','co-sui':'Superservicios RUPS',whymap:'WHYMAP global hydrogeology',need:'Water access (WHO/UNICEF JMP)',localneed:'Water need at this location',desal:'Desalination plants nearby',gebco:'GEBCO sea depth','br-st':'ANA hydromet network','br-gw':'RIMAS groundwater wells','br-ete':'ANA sewage plants','br-note':'Brazil quality (pending)',wpdx:'WPdx water points',bgs:'Africa Groundwater Atlas (BGS)',portals:'National portals',nat:'National network',grid:'Electricity grid (OSM, HIFLD, IPSE ZNI, World Bank)',feed:'Feed-water sizing',econ:'Energy cost: grid vs solar',cov:'Coverage report'};
 let scanT0=0,scanTimer=null;
 function scaffold(){dossier.innerHTML='';progressEl=document.createElement('div');progressEl.className='status';progressEl.innerHTML='<div class="hd"><span>Scanning…</span><span class="t">0 s</span></div><ul></ul>';dossier.appendChild(progressEl);progressItems={};scanT0=Date.now();clearInterval(scanTimer);scanTimer=setInterval(()=>{const t=progressEl.querySelector('.hd .t');if(t&&!progressEl.classList.contains('complete'))t.textContent=Math.round((Date.now()-scanT0)/1000)+' s';},1000);for(const [id,label] of GROUPS){const g=document.createElement('div');g.className='grp';g.id='g-'+id;g.hidden=true;g.innerHTML=`<h3>${esc(label)}</h3>`;dossier.appendChild(g);groupEl[id]=g;}}
 function progress(id,state){if(!progressEl)return;let it=progressItems[id];if(!it){it=document.createElement('li');it.innerHTML=`<i></i><span>${esc(SRC_LABELS[id]||id)}</span><em class="ms"></em>`;it.dataset.t0=Date.now();progressEl.querySelector('ul').appendChild(it);progressItems[id]=it;}it.className=state;if(state!=='run')it.querySelector('.ms').textContent=((Date.now()-(+it.dataset.t0))/1000).toFixed(1)+' s';const n=Object.values(progressItems),d=n.filter(x=>x.className!=='run').length,bad=n.filter(x=>x.className==='err').length;progressEl.querySelector('.hd span').textContent=d<n.length?`Fetching ${d}/${n.length} sources…`:`Scan complete — ${n.length} sources${bad?`, ${bad} failed`:''}`;}
@@ -1178,6 +1178,14 @@ async function adGrid(lat,lon,r,cc,loc){
     if(!rows.length)return;const by={};for(const x of rows){const h=+x.prom_diario_horas;if(!(h>0&&h<=24))continue;const k=String(x.localidad||'').replace(/\s*\(.*$/,'').trim().toUpperCase();if(!k||by[k])continue;by[k]={loc:k,mpio:x.mpio,dpto:x.dpto,h,kw:+x.potencia_maxima,kwh:+x.energia_activa,y:x.anio,m:x.mes};}
     const list=Object.values(by);g.zni={n:list.length,list,hMed:list.map(x=>x.h).sort((a,b)=>a-b)[Math.floor(list.length/2)],mpio:list[0].mpio,y:list[0].y,m:list[0].m};
   })().catch(e=>html(c,`<div class="hint">IPSE ZNI: ${esc(e.message)}</div>`)));}
+  // 3b. gridfinder — machine-learning prediction of MV/HV lines from night lights (Arderne et al. 2020), pre-tiled 1°×1°
+  tasks.push((async()=>{const kmR=R/1000,dLat=kmR/111,dLon=kmR/111/Math.max(0.2,Math.cos(lat*Math.PI/180));
+    const keys=[];for(let a=Math.floor(lat-dLat);a<=Math.floor(lat+dLat);a++)for(let b=Math.floor(lon-dLon);b<=Math.floor(lon+dLon);b++)keys.push(a+'_'+b);
+    let best=null,drawn=0,any=false;
+    for(const k of keys){let t;try{t=await getJSON('data/gf/'+k+'.json',{timeout:15000});}catch(e){continue;}any=true;const q=t.q,[la0,lo0]=t.o;
+      for(const f of t.l){let x=f[0],y=f[1];const co=[[la0+y*q,lo0+x*q]];for(let i=2;i<f.length;i+=2){x+=f[i];y+=f[i+1];co.push([la0+y*q,lo0+x*q]);}
+        const d=distToPath([lat,lon],co);if(d<=kmR){if(!best||d<best)best=d;if(drawn<400){L.polyline(co,{color:'#8a6d3b',weight:1.5,opacity:.7,dashArray:'2 4'}).bindPopup('<b>Predicted power line (gridfinder)</b><br>Machine-learning estimate from night-time lights + OSM, 2020 — not a survey').addTo(layerGroup);drawn++;}}}}
+    g.gf={tiles:any,d:best};})());
   // 4. World Bank national indicators
   tasks.push((async()=>{const a3=countryA3(cc);if(!a3)return;const ids=['EG.ELC.ACCS.ZS','EG.ELC.ACCS.RU.ZS','EG.ELC.LOSS.ZS','IC.ELC.OUTG.ZS','IC.ELC.TIME'];const out={};
     await Promise.all(ids.map(async id=>{try{const j=await getJSON(`https://api.worldbank.org/v2/country/${a3}/indicator/${id}?format=json&per_page=12`,{timeout:25000});const d=(j&&j[1]||[]).find(x=>x.value!=null);if(d)out[id]={v:d.value,y:d.date,name:d.indicator.value};}catch(e){}}));
@@ -1188,15 +1196,17 @@ async function adGrid(lat,lon,r,cc,loc){
   const kv=g.hifld?.nearest?.kv??g.nearestLine?.kv;
   let cls,label;
   if(g.zni&&!(dl!=null&&dl<=5)){cls='zni';label=`Non-interconnected zone (ZNI): ${fmt(g.zni.hMed,1)} h/day of service`;}
+  else if(dl==null&&g.gf&&g.gf.d!=null){const d=g.gf.d;cls=d<=2?'near':d<=10?'mid':'far';label=`No line mapped in OSM; gridfinder predicts a line ${fmt(d,1)} km away — verify locally`;g.predicted=true;}
   else if(dl==null){const acc=g.wb&&g.wb['EG.ELC.ACCS.ZS'];if(acc&&acc.v>=90){cls='unmapped';label=`No power line mapped in OSM within ${Math.round(R/1000)} km, but national electrification is ${fmt(acc.v,0)} % — grid probably present, verify locally`;}else{cls='none';label=`No power line mapped within ${Math.round(R/1000)} km — treat as off-grid`;}}
   else if(dl<=2){cls='near';label=`Grid line ${fmt(dl,1)} km away${kv?' ('+fmt(kv,0)+' kV)':''}`;}
   else if(dl<=10){cls='mid';label=`Nearest mapped line ${fmt(dl,1)} km${kv?' ('+fmt(kv,0)+' kV)':''} — extension needed`;}
   else{cls='far';label=`Nearest mapped line ${fmt(dl,0)} km — effectively off-grid`;}
-  g.cls=cls;g.label=label;g.dLine=dl??null;g.kv=kv??null;
+  g.cls=cls;g.label=label;g.dLine=dl??(g.predicted?g.gf.d:null);g.kv=kv??null;
   const wb=g.wb||{};const out=wb['IC.ELC.OUTG.ZS'],loss=wb['EG.ELC.LOSS.ZS'],acc=wb['EG.ELC.ACCS.RU.ZS'];
   g.rel=out?(out.v>=50?'poor':out.v>=25?'unreliable':'fair'):loss?(loss.v>=20?'poor':loss.v>=12?'unreliable':'fair'):null;
   setStatus(c,label,cls==='near'?'ok':cls==='none'||cls==='far'||cls==='zni'?'warn':'');
   cov('Electricity grid proximity (OSM/HIFLD)',dl!=null?'ok':'none',dl!=null?`nearest line ${fmt(dl,1)} km`:'no power line mapped nearby');
+  if(g.gf&&g.gf.tiles)html(c,`<div><b>Predicted grid (gridfinder, 2020):</b> ${g.gf.d!=null?`nearest predicted line <b>${fmt(g.gf.d,1)} km</b>`:`no predicted line within ${Math.round(R/1000)} km`} <span class="hint">(brown dotted on the map; ML estimate from night-time lights — strongest where OSM is thin)</span></div>`);
   if(g.util)html(c,`<div><b>Utility territory (HIFLD):</b> ${esc(g.util.name)} — ${esc(g.util.type||'')}${g.util.hold?', '+esc(g.util.hold):''}${g.util.cust?' · '+fmt(g.util.cust,0)+' customers':''}${g.util.ca?' · control area '+esc(g.util.ca):''}${g.util.others&&g.util.others.length?' <span class="hint">(also overlapping: '+esc(g.util.others.join(', '))+')</span>':''}</div>`);
   if(g.zni)html(c,`<div><b>IPSE — Zonas No Interconectadas, ${esc(g.zni.mpio)}</b> (${g.zni.y}-${g.zni.m}): ${g.zni.n} localities tracked, median <b>${fmt(g.zni.hMed,1)} h/day</b>.${cls!=='zni'?' <span class="hint">This point is near a mapped grid line, so these apply to the outlying localities, not necessarily here.</span>':''}</div>`+table(g.zni.list.slice(0,12),[{h:'Locality',f:x=>esc(x.loc)},{h:'h/day',num:1,f:x=>fmt(x.h,1)},{h:'Peak kW',num:1,f:x=>fmt(x.kw,0)},{h:'kWh/month',num:1,f:x=>fmt(x.kwh,0)}]));
   if(g.lines.length||g.hifld)html(c,`<div><b>Lines:</b> ${g.lines.length} OSM segments${g.hifld?` · ${g.hifld.n} HIFLD transmission lines`:''} within ${Math.round(R/1000)} km. ${g.nearestLine?`Nearest OSM: ${esc(g.nearestLine.name||g.nearestLine.kind)} ${g.nearestLine.kv?fmt(g.nearestLine.kv,0)+' kV ':''}at ${fmt(g.nearestLine.d,1)} km${g.nearestLine.op?' ('+esc(g.nearestLine.op)+')':''}.`:''}${g.hifld?.nearest?` Nearest HIFLD: ${fmt(g.hifld.nearest.kv,0)} kV ${esc(g.hifld.nearest.op)} at ${fmt(g.hifld.nearest.d,1)} km.`:''}</div>`);
@@ -1281,8 +1291,8 @@ function adFeedOptions(ctx){
   const cands=[];
   if(ctx.coast)cands.push({src:'Seawater (coastline within radius)',tds:35000,sec:4.5});
   const secFor=t=>t<1000?0.6:t<3000?1.6:t<10000?2.8:t<30000?4:5;
-  if(ctx.gwTDS!=null)cands.push({src:'Groundwater — wells sampled nearby (median)',tds:ctx.gwTDS,sec:secFor(ctx.gwTDS)+0.2});
-  if(ctx.swTDS!=null)cands.push({src:'Surface water — streams sampled nearby (median)',tds:ctx.swTDS,sec:secFor(ctx.swTDS)});
+  if(ctx.gwTDS!=null)cands.push({src:'Groundwater — wells sampled nearby (median'+(ctx.gwTDSsrc?', '+ctx.gwTDSsrc:'')+')',tds:ctx.gwTDS,sec:secFor(ctx.gwTDS)+0.2});
+  if(ctx.swTDS!=null)cands.push({src:'Surface water — streams sampled nearby (median'+(ctx.swTDSsrc?', '+ctx.swTDSsrc:'')+')',tds:ctx.swTDS,sec:secFor(ctx.swTDS)});
   if(ctx.tds!=null){const t=ctx.tds;cands.push({src:ctx.tdsLabel||'Local groundwater / surface (sampled median)',tds:t,sec:t<1000?0.6:t<3000?1.6:t<10000?2.8:t<30000?4:5});}
   if(ctx.salineArea&&ctx.tds==null&&ctx.gwTDS==null)cands.push({src:'Regional groundwater — WHYMAP maps this as a saline area (>5 g/L); assume brackish-to-saline until tested',tds:8000,sec:2.8});
   if(ctx.wells&&ctx.tds==null&&ctx.gwTDS==null)cands.push({src:`Mapped wells (${ctx.wells}) — salinity unknown`,tds:null,sec:null});
@@ -1299,6 +1309,38 @@ function adFeedOptions(ctx){
   ctx.best=rows.filter(r=>r.E!=null).sort((a,b)=>a.E-b.E)[0]||null;
   gridStrategy(ctx,c);
   html(c,`<div class="hint">Daytime-RO strategy: PV sized on worst-month GHI (${psh?fmt(psh,2):'?'} kWh/m²/d, PR 0.75); battery ≈ 1.5 h of RO load (water storage does the rest); standby genset ×1.25; land = PV 7.5 m²/kWp + plant 0.4 m²/(m³/d) + 2 days' storage. Inland brackish needs brine evaporation ponds (~60 m² per m³/d of plant) not included. Energy figures include intake and distribution; small-plant penalty not applied.</div>`);
+}
+
+// ---------- global static datasets in the Supabase cache ----------
+async function adHydroWaste(lat,lon,r){
+  const c=card('hw','Wastewater treatment plants (HydroWASTE)','sources',{closed:true});
+  try{const rows=await sbRpc('bulk_near',{theme_in:'wwtp',lat,lon,km:Math.max(r,15),lim:50});
+    if(!rows.length){setStatus(c,'none within '+Math.max(r,15)+' km','');html(c,'<div class="hint">No plant in the global HydroWASTE inventory nearby.</div>');src(c,'HydroWASTE v1.0 (Ehalt Macedo et al. 2022)','https://www.hydrosheds.org/products/hydrowaste');cov('Wastewater treatment (HydroWASTE)','none','none nearby');return null;}
+    const tot=rows.filter(x=>x.d_km<=r).reduce((a,x)=>a+(x.props.dis||0),0);
+    setStatus(c,`${rows.length} plant${rows.length>1?'s':''} · nearest ${fmt(rows[0].d_km,1)} km`,'ok');
+    for(const x of rows.slice(0,40))L.circleMarker([x.lat,x.lon],{radius:5,color:'#6b4f2a',weight:1.5,fillColor:'#c9a26b',fillOpacity:.8}).bindPopup(`<b>${esc(x.name||'WWTP')}</b><br>HydroWASTE · ${x.props.lvl?esc(x.props.lvl)+' treatment':''}${x.props.pop?' · '+fmt(x.props.pop,0)+' people':''}${x.props.dis?' · ~'+fmt(x.props.dis,0)+' m³/d':''}`).addTo(layerGroup);
+    html(c,table(rows.slice(0,12),[{h:'Plant',f:x=>esc(x.name||'—')},{h:'km',num:1,f:x=>fmt(x.d_km,1)},{h:'Level',f:x=>esc(x.props.lvl||'')},{h:'People',num:1,f:x=>fmt(x.props.pop,0)},{h:'Effluent m³/d',num:1,f:x=>fmt(x.props.dis,0)},{h:'Status',f:x=>esc(x.props.st||'')}]));
+    html(c,`<div class="hint">Effluent volumes are modelled where not reported. Treated effluent is a possible RO feed for non-potable or indirect reuse (TDS ≈ 1 g/L, needs tertiary treatment and a permit).</div>`);
+    src(c,'HydroWASTE v1.0 (Ehalt Macedo et al. 2022, CC-BY 4.0)','https://www.hydrosheds.org/products/hydrowaste');cov('Wastewater treatment (HydroWASTE)','ok',`${rows.length} plants`);
+    return {n:rows.filter(x=>x.d_km<=r).length,dis:tot,nearest:rows[0]};
+  }catch(e){fail(c,e);return null;}
+}
+async function adSalinityDB(lat,lon,r){
+  const c=card('sal','Measured salinity (global database 1980–2019)','sources',{closed:true});
+  const R=Math.max(r,25);
+  try{const [gw,rv,lk]=await Promise.all(['sal_gw','sal_rv','sal_lk'].map(t=>sbRpc('bulk_near',{theme_in:t,lat,lon,km:R,lim:300}).catch(()=>[])));
+    const med=a=>{if(!a.length)return null;const v=a.map(x=>x.props.ec).sort((x,y)=>x-y);return v[Math.floor(v.length/2)];};
+    const pick=a=>{const inR=a.filter(x=>x.d_km<=r);return inR.length?inR:a.slice(0,5);};
+    const G=pick(gw),S=pick([...rv,...lk].sort((a,b)=>a.d_km-b.d_km));
+    if(!G.length&&!S.length){setStatus(c,'no stations within '+R+' km','');html(c,'<div class="hint">No measurement in the Thorslund & van Vliet database nearby.</div>');src(c,'Thorslund & van Vliet 2020 (PANGAEA)','https://doi.org/10.1594/PANGAEA.913939');cov('Measured salinity (global DB)','none','none nearby');return {};}
+    const gEC=med(G),sEC=med(S),tds=ec=>ec==null?null:Math.round(ec*0.65);
+    setStatus(c,[gEC!=null?`groundwater ~${fmt(tds(gEC),0)} mg/L`:null,sEC!=null?`surface ~${fmt(tds(sEC),0)} mg/L`:null].filter(Boolean).join(' · '),'ok');
+    const row=(lbl,a,ec)=>a.length?`<dt>${lbl}</dt><dd>${(()=>{const cl=classifyTDS(tds(ec));return `<span class="pill ${cl.cls}">${esc(cl.c)}</span> `;})()}median EC <b>${fmt(ec,0)}</b> µS/cm ≈ <b>${fmt(tds(ec),0)}</b> mg/L TDS · ${a.reduce((s,x)=>s+(x.props.st||1),0)} station(s), nearest ${fmt(a[0].d_km,1)} km, last sample ${esc(a.map(x=>x.props.y1).sort().slice(-1)[0]||'?')}</dd>`:'';
+    html(c,`<dl class="kv">${row('Groundwater',G,gEC)}${row('Rivers & lakes',S,sEC)}</dl><div class="hint">Station medians, aggregated to ~2 km cells; TDS ≈ 0.65 × EC. ${G.some(x=>x.d_km>r)||S.some(x=>x.d_km>r)?'No station inside the scan radius — nearest stations up to '+R+' km shown. ':''}Old or distant samples are a guide, not a substitute for testing your own source.</div>`);
+    for(const x of [...G,...S].slice(0,60)){const cl=classifyTDS(tds(x.props.ec));L.circleMarker([x.lat,x.lon],{radius:4,color:'#1f5f8b',weight:1,fillColor:cl&&cl.c==='fresh'?'#7fc8f8':cl&&cl.c==='brackish'?'#2b8cbe':'#08306b',fillOpacity:.85}).bindPopup(`<b>Salinity station</b><br>EC ${fmt(x.props.ec,0)} µS/cm ≈ ${fmt(tds(x.props.ec),0)} mg/L · last ${esc(x.props.y1||'?')}`).addTo(layerGroup);}
+    src(c,'Thorslund & van Vliet 2020, global salinity database (PANGAEA, CC-BY 4.0)','https://doi.org/10.1594/PANGAEA.913939');cov('Measured salinity (global DB)','ok',`${G.length+S.length} cells`);
+    return {gwTDS:tds(gEC),swTDS:tds(sEC),near:G.some(x=>x.d_km<=r)||S.some(x=>x.d_km<=r)};
+  }catch(e){fail(c,e);return {};}
 }
 
 // ---------- alternatives to a new desalination plant: be honest when something cheaper exists ----------
@@ -1425,6 +1467,7 @@ async function scan(lat,lon){
     let wp=null; // WorldPop API is not callable from a browser page (CORS); backend item
     const dem=adDemand(osm.places||[],wp);const _pl=(osm.places||[]).filter(p=>p.d!=null);const remoteKm=_pl.length?Math.min(..._pl.map(p=>p.d)):null;
     const gw=await adGlobalGW(lat,lon);await adDepth(lat,lon,osm.coast);
+    const [hw,salDB]=await Promise.all([adHydroWaste(lat,lon,r),adSalinityDB(lat,lon,r)]);
     const a3=countryA3(cc);const need=await adNeed(a3,cc,loc);const ds=await adDesalNearby(lat,lon);
     const ctx={lat,lon,r,loc,Q:dem.Q,pop:dem.pop,assumed:dem.assumed,remoteKm,salineArea:!!gw.saline,need,ds,solar,coast:osm.coast,wells:osm.wells,tds:null,wwtp:false,utility:null,micro:null,wwtpName:null,flow,rivers:(osm.cnt&&(osm.cnt['River']||0))||0};
     const nat=await natP;Object.assign(ctx,nat);
@@ -1434,7 +1477,10 @@ async function scan(lat,lon){
     ctx.localNeed=adLocalNeed(ctx,osm,dem);
     if(!ctx.grid)gridP.then(async g=>{ctx.grid=g;gridStrategy(ctx);if(cards.localneed){cards.localneed.el.remove();delete cards.localneed;}ctx.localNeed=adLocalNeed(ctx,osm,dem);if(cards.econ){cards.econ.el.remove();delete cards.econ;}await adEconomics(ctx);renderBrief(ctx);});
     if(nat.wellsAdd)ctx.wells+=nat.wellsAdd;
-    ctx.wwtp=coverage.some(x=>/Wastewater treatment \((OSM|EPA|ANA)\)/.test(x.topic)&&x.state==='ok');
+    ctx.wwtp=coverage.some(x=>/Wastewater treatment \((OSM|EPA|ANA)\)/.test(x.topic)&&x.state==='ok')||!!(hw&&hw.n);ctx.hw=hw;
+    // national samples win; the global database fills gaps
+    if(ctx.gwTDS==null&&salDB.gwTDS!=null){ctx.gwTDS=salDB.gwTDS;ctx.gwTDSsrc='global salinity DB';}
+    if(ctx.swTDS==null&&salDB.swTDS!=null){ctx.swTDS=salDB.swTDS;ctx.swTDSsrc='global salinity DB';}
     adFeedOptions(ctx);
     adAlternatives(ctx);
     await adEconomics(ctx);
