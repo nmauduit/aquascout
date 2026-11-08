@@ -1,29 +1,141 @@
 {
-  "_about": "Documented municipal water-supply crises (shortage / rationing / quality). Curated by hand; review twice a year. radius_km = area the crisis applies to around lat/lon. severity: severe (chronic, emergency declared, trucked water) or moderate (recurring seasonal rationing).",
-  "_reviewed": "2026-11-08",
-  "items": [
-    {"name": "Santa Marta", "cc": "CO", "lat": 11.2408, "lon": -74.1990, "radius_km": 15, "type": ["shortage", "quality"], "severity": "severe", "since": "chronic",
-     "summary": "Chronic shortfall: public calamity declared over water shortages, the utility (ESSMAR) taken over by Superservicios, water trucks supplying 40+ neighbourhoods, illegal water vendors; the Pozos Colorados desalination plant was cancelled.",
-     "sources": [["RTVC — calamidad pública por desabastecimiento", "https://www.rtvcnoticias.com/calamidad-publica-por-falta-de-agua"],
-                 ["Blu Radio — Superservicios toma la empresa de acueducto", "https://www.bluradio.com/blu360/caribe/superservicios-se-toma-la-empresa-de-acueducto-santa-marta-y-remueve-a-su-gerente"],
-                 ["El Tiempo — carrotanques a más de 40 barrios", "https://www.eltiempo.com/colombia/otras-ciudades/aguacero-dejo-tambien-sin-agua-a-gran-parte-de-santa-marta-a-traves-de-carrotanques-abastecen-a-mas-de-40-barrios-3480375"]]},
-    {"name": "San Andrés island", "cc": "CO", "lat": 12.5560, "lon": -81.7185, "radius_km": 14, "type": ["shortage"], "severity": "severe", "since": "chronic",
-     "summary": "Island supply is rationed: the Ombudsman reported water reaching households about once every 15 days; public calamity, road blockades and tanker supply in dry seasons.",
-     "sources": [["Colombia.com — agua cada 15 días (Defensoría)", "https://www.colombia.com/actualidad/nacionales/sdi/135440/a-san-andres-le-llega-agua-cada-15-dias-defensoria-del-pueblo"],
-                 ["MinVivienda — calamidad pública en San Andrés", "https://minvivienda.gov.co/sala-de-prensa/ministerio-de-vivienda-acompana-plan-de-accion-para-atender-calamidad-publica-en-san-andres"]]},
-    {"name": "Alta & Media Guajira (Uribia, Manaure)", "cc": "CO", "lat": 11.85, "lon": -72.10, "radius_km": 75, "type": ["shortage", "quality"], "severity": "severe", "since": "chronic",
-     "summary": "Most Wayuu rancherías have no piped supply; water comes from jagüeyes, brackish wells and tankers. National government is drilling wells and regional schemes as emergency measures.",
-     "sources": [["MinVivienda — pozo de agua subterránea en Uribia", "https://minvivienda.gov.co/sala-de-prensa/gobierno-nacional-inaugura-manana-pozo-de-agua-subterranea-en-uribia-la-guajira-minvivienda"],
-                 ["MinVivienda — esquemas regionales en La Guajira", "https://minvivienda.gov.co/sala-de-prensa/con-esquemas-regionales-llevaremos-agua-mas-lugares-de-la-guajira-minvivienda"]]},
-    {"name": "Maicao", "cc": "CO", "lat": 11.3779, "lon": -72.2390, "radius_km": 12, "type": ["shortage"], "severity": "severe", "since": "chronic",
-     "summary": "Town supply depends on emergency groundwater wells added by the national government.",
-     "sources": [["MinVivienda — pozos subterráneos en Maicao", "https://minvivienda.gov.co/sala-de-prensa/la-experiencia-de-con-los-2-pozos-subterraneos-de-agua-ha-sido-muy-buena-dijo-el-alcalde-de-maicao-en-reunion-con-minvivienda"]]},
-    {"name": "Riohacha", "cc": "CO", "lat": 11.5444, "lon": -72.9072, "radius_km": 10, "type": ["shortage"], "severity": "moderate", "since": "recurring dry seasons",
-     "summary": "Supply from the Tapias river; recurrent low river levels force savings calls and rationing.",
-     "sources": [["El Tiempo — bajos niveles del río Tapias", "https://www.eltiempo.com/colombia/otras-ciudades/riohacha-piden-ahorrar-agua-por-bajos-niveles-del-rio-tapias-742642"]]},
-    {"name": "Cartagena", "cc": "CO", "lat": 10.3910, "lon": -75.4794, "radius_km": 15, "type": ["shortage"], "severity": "moderate", "since": "2026 dry season",
-     "summary": "Acuacar ran weeks of neighbourhood-by-neighbourhood rationing in May–June 2026 (about 50,000 users per round).",
-     "sources": [["El Universal — racionamiento, 50.000 usuarios afectados", "https://www.eluniversal.com.co/cartagena/2026/05/22/racionamiento-de-agua-en-cartagena-50000-usuarios-afectados-del-25-al-30-de-mayo-barrios-y-horarios/"],
-                 ["RCN — plan de racionamiento en Cartagena", "https://www.noticiasrcn.com/colombia/barrios-impactados-en-cartagena-por-racionamiento-de-agua-potable-1019977"]]}
-  ]
+ "_about": "Documented municipal water-supply crises (shortage / rationing / quality). Curated by hand; review twice a year. radius_km = area the crisis applies to around lat/lon. severity: severe (chronic, emergency declared, trucked water) or moderate (recurring seasonal rationing).",
+ "_reviewed": "2026-11-08",
+ "items": [
+  {
+   "name": "Santa Marta",
+   "cc": "CO",
+   "lat": 11.2408,
+   "lon": -74.199,
+   "radius_km": 15,
+   "type": [
+    "shortage"
+   ],
+   "severity": "severe",
+   "since": "chronic",
+   "summary": "Chronic shortfall: public calamity declared over water shortages, the utility (ESSMAR) taken over by Superservicios, water trucks supplying 40+ neighbourhoods during outages, and unregulated water vendors filling the gap; the Pozos Colorados desalination plant was cancelled. Treated network water itself tests safe (urban IRCA 0).",
+   "sources": [
+    [
+     "RTVC — calamidad pública por desabastecimiento",
+     "https://www.rtvcnoticias.com/calamidad-publica-por-falta-de-agua"
+    ],
+    [
+     "Blu Radio — Superservicios toma la empresa de acueducto",
+     "https://www.bluradio.com/blu360/caribe/superservicios-se-toma-la-empresa-de-acueducto-santa-marta-y-remueve-a-su-gerente"
+    ],
+    [
+     "El Tiempo — carrotanques a más de 40 barrios",
+     "https://www.eltiempo.com/colombia/otras-ciudades/aguacero-dejo-tambien-sin-agua-a-gran-parte-de-santa-marta-a-traves-de-carrotanques-abastecen-a-mas-de-40-barrios-3480375"
+    ]
+   ]
+  },
+  {
+   "name": "San Andrés island",
+   "cc": "CO",
+   "lat": 12.556,
+   "lon": -81.7185,
+   "radius_km": 14,
+   "type": [
+    "shortage"
+   ],
+   "severity": "severe",
+   "since": "chronic",
+   "summary": "Island supply is rationed: the Ombudsman reported water reaching households about once every 15 days; public calamity, road blockades and tanker supply in dry seasons.",
+   "sources": [
+    [
+     "Colombia.com — agua cada 15 días (Defensoría)",
+     "https://www.colombia.com/actualidad/nacionales/sdi/135440/a-san-andres-le-llega-agua-cada-15-dias-defensoria-del-pueblo"
+    ],
+    [
+     "MinVivienda — calamidad pública en San Andrés",
+     "https://minvivienda.gov.co/sala-de-prensa/ministerio-de-vivienda-acompana-plan-de-accion-para-atender-calamidad-publica-en-san-andres"
+    ]
+   ]
+  },
+  {
+   "name": "Alta & Media Guajira (Uribia, Manaure)",
+   "cc": "CO",
+   "lat": 11.85,
+   "lon": -72.1,
+   "radius_km": 75,
+   "type": [
+    "shortage",
+    "quality"
+   ],
+   "severity": "severe",
+   "since": "chronic",
+   "summary": "Most Wayuu rancherías have no piped supply; water comes from jagüeyes, brackish wells and tankers. National government is drilling wells and regional schemes as emergency measures.",
+   "sources": [
+    [
+     "MinVivienda — pozo de agua subterránea en Uribia",
+     "https://minvivienda.gov.co/sala-de-prensa/gobierno-nacional-inaugura-manana-pozo-de-agua-subterranea-en-uribia-la-guajira-minvivienda"
+    ],
+    [
+     "MinVivienda — esquemas regionales en La Guajira",
+     "https://minvivienda.gov.co/sala-de-prensa/con-esquemas-regionales-llevaremos-agua-mas-lugares-de-la-guajira-minvivienda"
+    ]
+   ]
+  },
+  {
+   "name": "Maicao",
+   "cc": "CO",
+   "lat": 11.3779,
+   "lon": -72.239,
+   "radius_km": 12,
+   "type": [
+    "shortage"
+   ],
+   "severity": "severe",
+   "since": "chronic",
+   "summary": "Town supply depends on emergency groundwater wells added by the national government.",
+   "sources": [
+    [
+     "MinVivienda — pozos subterráneos en Maicao",
+     "https://minvivienda.gov.co/sala-de-prensa/la-experiencia-de-con-los-2-pozos-subterraneos-de-agua-ha-sido-muy-buena-dijo-el-alcalde-de-maicao-en-reunion-con-minvivienda"
+    ]
+   ]
+  },
+  {
+   "name": "Riohacha",
+   "cc": "CO",
+   "lat": 11.5444,
+   "lon": -72.9072,
+   "radius_km": 10,
+   "type": [
+    "shortage"
+   ],
+   "severity": "moderate",
+   "since": "recurring dry seasons",
+   "summary": "Supply from the Tapias river; recurrent low river levels force savings calls and rationing.",
+   "sources": [
+    [
+     "El Tiempo — bajos niveles del río Tapias",
+     "https://www.eltiempo.com/colombia/otras-ciudades/riohacha-piden-ahorrar-agua-por-bajos-niveles-del-rio-tapias-742642"
+    ]
+   ]
+  },
+  {
+   "name": "Cartagena",
+   "cc": "CO",
+   "lat": 10.391,
+   "lon": -75.4794,
+   "radius_km": 15,
+   "type": [
+    "shortage"
+   ],
+   "severity": "moderate",
+   "since": "2026 dry season",
+   "summary": "Acuacar ran weeks of neighbourhood-by-neighbourhood rationing in May–June 2026 (about 50,000 users per round).",
+   "sources": [
+    [
+     "El Universal — racionamiento, 50.000 usuarios afectados",
+     "https://www.eluniversal.com.co/cartagena/2026/05/22/racionamiento-de-agua-en-cartagena-50000-usuarios-afectados-del-25-al-30-de-mayo-barrios-y-horarios/"
+    ],
+    [
+     "RCN — plan de racionamiento en Cartagena",
+     "https://www.noticiasrcn.com/colombia/barrios-impactados-en-cartagena-por-racionamiento-de-agua-potable-1019977"
+    ]
+   ]
+  }
+ ]
 }
