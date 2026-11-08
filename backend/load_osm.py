@@ -58,6 +58,8 @@ tmp.close()
 print(f"{region}/{theme}: {n} features to load")
 
 sql = f"""
+set statement_timeout = 0;
+set lock_timeout = 0;
 create temp table stg (osm_id text, theme text, region text, tags jsonb, gj text);
 \\copy stg from '{tmp.name}' with (format text)
 delete from osm_feat where region = '{region}' and theme = '{theme}';

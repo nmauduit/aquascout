@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 """Pre-bake every OSM man_made=desalination_plant worldwide into data/osm-desal.json (run weekly in GitHub Actions)."""
 import json, urllib.request, urllib.parse, pathlib
-Q = '[out:json][timeout:180];nwr["man_made"="desalination_plant"];out tags center 10000;'
+Q = ('[out:json][timeout:180];('
+     'nwr["man_made"="desalination_plant"];'
+     'nwr["water_works"~"desalinat",i];'
+     'nwr["plant:method"~"desalinat|reverse.?osmosis",i];'
+     'nwr["industrial"~"desalinat",i];'
+     'nwr["man_made"="water_works"]["name"~"desal|dessal|desalin|osmos",i];'
+     ');out tags center 10000;')
 r = None
 for m in ["https://overpass-api.de/api/interpreter", "https://overpass.private.coffee/api/interpreter", "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
           "https://lz4.overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"]:
@@ -10,7 +16,7 @@ for m in ["https://overpass-api.de/api/interpreter", "https://overpass.private.c
         j = json.load(urllib.request.urlopen(req, timeout=240))
         n = len(j.get("elements", []))
         print(m, n, "elements", j.get("remark", ""))
-        if n >= 500 and not j.get("remark"): r = j; break
+        if n >= 20 and not j.get("remark"): r = j; break
     except Exception as e:
         print(m, "failed", e)
 if not r:
