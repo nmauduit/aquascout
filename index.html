@@ -414,19 +414,24 @@ function adLocalNeed(ctx,osm,dem){
   else if(/^(town|suburb|quarter|borough|neighbourhood)$/.test(pt)){set=(dem.placePop&&dem.placePop<5000)?'rural':'urban';setWhy=`OSM: ${dem.placeName} (${pt}${dem.placePop?', '+fmt(dem.placePop,0)+' people':''})`;}
   else if(/village|hamlet|isolated|locality|farm/.test(pt)){set='rural';setWhy=`OSM: ${dem.placeName} is a ${pt}`;}
   else{set=ctx.pop<=5000?'rural':'urban';setWhy=pt?`OSM place type ${pt}`:'no OSM place tag — judged from community size';}
-  // baseline and adjustment
+  // baseline and adjustment (coverage scaling, bounded):
+  //   cov_here = latest national coverage for this settlement type × (region / national average in the same survey)
   const g=v=>v==null?null:Math.max(0,100-v);
-  const natTot=g(d&&d.basw),natSet=g(d&&(set==='rural'?d.basw_ru:d.basw_ur));
-  const regGap=sub?g(sub.Basic):natTot;
-  let ratio=null;if(natTot!=null&&natSet!=null&&natTot>=0.5)ratio=Math.min(3,Math.max(0.2,natSet/natTot));
-  let est=regGap!=null?(ratio!=null?regGap*ratio:regGap):natSet;est=est==null?null:Math.min(100,est);
-  const smSet=g(d&&(set==='rural'?d.smdw_ru:d.smdw_ur)),smTot=g(d&&d.smdw);
-  let estSM=smSet!=null?(sub&&natTot>0.5&&regGap!=null?smSet*Math.min(3,Math.max(0.3,regGap/natTot)):smSet):null;if(estSM!=null)estSM=Math.min(100,Math.max(estSM,est||0));
+  const covSet=d?(set==='rural'?d.basw_ru:d.basw_ur):null, covTot=d?d.basw:null;
+  const surveyAvg=sub&&sub.country&&sub.country.total_mean_q?sub.country.total_mean_q.Basic:null;
+  let rel=null,relWhy='';
+  if(sub&&surveyAvg>0){rel=sub.Basic/surveyAvg;relWhy=`region ${fmt(sub.Basic,0)}% vs ${fmt(surveyAvg,0)}% national average in the same ${sub.year} survey`;}
+  else if(sub&&covTot>0){rel=sub.Basic/covTot;relWhy=`region ${fmt(sub.Basic,0)}% (${sub.year}) vs ${fmt(covTot,0)}% national (${d.basw_y||''})`;}
+  const covHere=covSet!=null?Math.min(100,covSet*(rel??1)):(sub?sub.Basic:covTot);
+  let est=covHere!=null?Math.max(0,100-covHere):null;
+  const smSet=d?(set==='rural'?d.smdw_ru:d.smdw_ur):null;
+  let estSM=smSet!=null?Math.max(0,100-Math.min(100,smSet*(rel??1))):null;if(estSM!=null&&est!=null)estSM=Math.max(estSM,est);
+  const regGap=sub?g(sub.Basic):g(covTot),natSet=g(covSet),natTot=g(covTot);
   // local evidence
   const ev=[];const add=(e,t)=>ev.push({e,t});
-  if(ctx.utility)add(-1,`A registered water supplier covers this area (${esc(ctx.utility)}).`);
+  if(ctx.utility)add(set==='urban'?-1:0,set==='urban'?`A registered water supplier serves this area (${esc(ctx.utility)}).`:`A supplier is registered for the municipality (${esc(ctx.utility)}), but that does not guarantee rural coverage.`);
   else if(set==='rural')add(1,'No registered water utility found for this point.');
-  if(ctx.irca!=null&&!isNaN(ctx.irca)){const v=+ctx.irca;add(v>35?2:v>14?1:v<=5?-1:0,`Tap-water risk index IRCA ${fmt(v,1)} (${v<=5?'no risk':v<=14?'low':v<=35?'medium':v<=80?'high':'unfit'}).`);}
+  if(ctx.irca!=null&&!isNaN(ctx.irca)){const v=+ctx.irca;add(v>35?2:v>14?1:(v<=5&&set==='urban')?-1:0,`Municipal tap-water risk index IRCA ${fmt(v,1)}${set==='rural'?' (sampled on the urban network)':''} (${v<=5?'no risk':v<=14?'low':v<=35?'medium':v<=80?'high':'unfit'}).`);}
   if(ctx.micro&&ctx.micro.max>0)add(1,`Faecal contamination recorded nearby (${esc(ctx.micro.name)}).`);
   if(ctx.wpdx&&ctx.wpdx.n){const f=ctx.wpdx.func;add(f<0.6?1:f>0.85?-1:0,`${fmt(f*100,0)}% of ${ctx.wpdx.n} mapped water points are functional (WPdx).`);}
   if(sub&&sub['Surface water']!=null&&sub['Surface water']>=5)add(1,`${fmt(sub['Surface water'],0)}% of the region still drinks surface water.`);
@@ -442,8 +447,8 @@ function adLocalNeed(ctx,osm,dem){
   setStatus(c,`${level} need · ~${fmt(est,0)}% lack basic water (${set})`,li>=2?'bad':li>=1?'warn':'ok');
   html(c,`<div style="font-size:15px"><span class="pill ${cls}">${level.toUpperCase()}</span> &nbsp;About <b>${fmt(est,0)}%</b> of people here are likely to lack even basic drinking water${estSM!=null?`, and about <b>${fmt(estSM,0)}%</b> lack safely managed water`:''}.</div>`);
   html(c,`<dl class="kv"><dt>Settlement</dt><dd><b>${set}</b> — ${esc(setWhy)}</dd>
-    <dt>Regional baseline</dt><dd>${sub?`JMP region “${esc(sub.region)}” (${sub.year}): ${fmt(regGap,0)}% lack basic (all population)`:`national, all population: ${fmt(natTot,0)}% lack basic`}</dd>
-    <dt>${set} adjustment</dt><dd>${ratio!=null?`×${fmt(ratio,2)} — nationally ${set} areas have ${fmt(natSet,0)}% without basic water vs ${fmt(natTot,0)}% overall (JMP ${esc(d.basw_y||'')})`:'not available'}</dd></dl>`);
+    <dt>Regional baseline</dt><dd>${sub?`JMP region “${esc(sub.region)}” (${sub.year} survey): ${fmt(regGap,0)}% lack basic, all population`:`national: ${fmt(natTot,0)}% lack basic, all population`}</dd>
+    <dt>Method</dt><dd>latest national ${set} coverage ${fmt(covSet,0)}% (JMP ${esc(d&&d.basw_y||'')})${rel!=null?` × ${fmt(rel,2)} (${esc(relWhy)})`:''} = <b>${fmt(covHere,0)}%</b> with at least basic water</dd></dl>`);
   if(ev.length)html(c,'<b>Local evidence</b><ul class="plain">'+ev.map(x=>`<li>${x.e>0?'▲':x.e<0?'▼':'•'} ${x.t}</li>`).join('')+`</ul><div class="hint">▲ raises the need level, ▼ lowers it. Net ${score>0?'+':''}${score}${score>=2?' → level raised one step':score<=-2?' → level lowered one step':''}.</div>`);
   html(c,'<div class="hint">Model estimate, not a measurement: regional WHO/UNICEF survey value × national rural/urban gap ratio, then adjusted by local evidence. Confirm with a household survey or the municipal water register before committing.</div>');
   src(c,'WHO/UNICEF JMP (national and subnational), OSM, utility registers, WPdx, INS IRCA','https://washdata.org/data');
@@ -1341,9 +1346,9 @@ async function scan(lat,lon){
     const a3=countryA3(cc);const need=await adNeed(a3,cc,loc);const ds=await adDesalNearby(lat,lon);
     const ctx={lat,lon,r,loc,Q:dem.Q,pop:dem.pop,assumed:dem.assumed,remoteKm,salineArea:!!gw.saline,need,ds,solar,coast:osm.coast,wells:osm.wells,tds:null,wwtp:false,utility:null,micro:null,wwtpName:null};
     const nat=await natP;Object.assign(ctx,nat);
-    ctx.localNeed=adLocalNeed(ctx,osm,dem);
     ctx.grid=await Promise.race([gridP,new Promise(r=>setTimeout(()=>r(null),40000))]);
-    if(!ctx.grid)gridP.then(async g=>{ctx.grid=g;gridStrategy(ctx);if(cards.econ){cards.econ.el.remove();delete cards.econ;}await adEconomics(ctx);renderBrief(ctx);});
+    ctx.localNeed=adLocalNeed(ctx,osm,dem);
+    if(!ctx.grid)gridP.then(async g=>{ctx.grid=g;gridStrategy(ctx);if(cards.localneed){cards.localneed.el.remove();delete cards.localneed;}ctx.localNeed=adLocalNeed(ctx,osm,dem);if(cards.econ){cards.econ.el.remove();delete cards.econ;}await adEconomics(ctx);renderBrief(ctx);});
     if(nat.wellsAdd)ctx.wells+=nat.wellsAdd;
     ctx.wwtp=coverage.some(x=>/Wastewater treatment \((OSM|EPA|ANA)\)/.test(x.topic)&&x.state==='ok');
     adFeedOptions(ctx);
