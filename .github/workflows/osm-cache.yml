@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       regions:
-        description: 'Space-separated Geofabrik slugs (default: core set)'
+        description: 'Space-separated Geofabrik slugs (default: core set; "none" = only vacuum + size report)'
         required: false
         default: ''
 jobs:
@@ -47,6 +47,7 @@ jobs:
           FAILED=""
           REGIONS="${{ github.event.inputs.regions }}"
           if [ -z "$REGIONS" ]; then REGIONS=$(grep -v '^#' backend/regions.txt | tr '\n' ' '); fi
+          if [ "$REGIONS" = "none" ]; then REGIONS=""; fi
           for R in $REGIONS; do
             SLUG=$(basename "$R")
             echo "=== $R"
@@ -66,5 +67,5 @@ jobs:
           if [ -n "$FAILED" ]; then echo "Regions that failed to download:$FAILED"; fi
       - name: Reclaim space (VACUUM FULL) and report size
         run: |
-          psql "--dbname=$(echo "$SUPABASE_DB_URL" | xargs)" -c "set statement_timeout = 0; vacuum (full, analyze) osm_feat;"
+          psql "--dbname=$(echo "$SUPABASE_DB_URL" | xargs)" -c "set statement_timeout = 0" -c "vacuum (full, analyze) osm_feat"
           psql "--dbname=$(echo "$SUPABASE_DB_URL" | xargs)" -tAc "select region||': water '||feat_water||', power '||feat_power from osm_region order by 1; select 'osm_feat on disk: '||pg_size_pretty(pg_total_relation_size('osm_feat'))||' | database: '||pg_size_pretty(pg_database_size(current_database()));"
