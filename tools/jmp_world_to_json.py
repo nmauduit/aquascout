@@ -41,7 +41,7 @@ MANUAL = {  # JMP names that the country file spells differently
     "United States Virgin Islands": "VIR", "Cayman Islands": "CYM", "Falkland Islands (Malvinas)": "FLK",
     "Northern Mariana Islands": "MNP", "Marshall Islands": "MHL", "Solomon Islands": "SLB", "Cook Islands": "COK",
     "Faroe Islands": "FRO", "Channel Islands": "CHI", "Wallis and Futuna Islands": "WLF", "Holy See": "VAT",
-    "Bonaire, Sint Eustatius and Saba": "BES", "Saint Pierre and Miquelon": "SPM", "Western Sahara": "ESH",
+    "Bonaire, Sint Eustatius and Saba": "BES", "Bonaire, Sint Eustasius and Saba": "BES", "occupied Palestinian territory*": "PSE", "occupied Palestinian territory": "PSE", "Saint Pierre and Miquelon": "SPM", "Western Sahara": "ESH",
 }
 
 cfeat = json.load(open(os.path.join(root, 'data', 'countries.geojson')))['features']
