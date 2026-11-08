@@ -401,6 +401,54 @@ async function adNeed(cc3,cc2,loc){
     return {gapRu,d,sub};
   }catch(e){fail(c,e,'JMP');cov('Water access context (JMP)','missing',e.message);return {};}
 }
+
+// ---------- water need at this location: regional JMP adjusted for settlement type + local evidence ----------
+function adLocalNeed(ctx,osm,dem){
+  const c=card('localneed','Water need at this location (estimate)','site');
+  const d=ctx.need&&ctx.need.d,sub=ctx.need&&ctx.need.sub;
+  if(!d&&!sub){setStatus(c,'no JMP data','none');html(c,'<div class="none">No WHO/UNICEF estimate for this country, so no location estimate.</div>');return null;}
+  // settlement type
+  const pt=(dem.place||'').toLowerCase();let set,setWhy;
+  if(dem.placeD!=null&&dem.placeD>5){set='rural';setWhy=`nearest populated place is ${fmt(dem.placeD,0)} km away`;}
+  else if(/^(city)$/.test(pt)){set='urban';setWhy=`OSM: ${dem.placeName} is a city`;}
+  else if(/^(town|suburb|quarter|borough|neighbourhood)$/.test(pt)){set=(dem.placePop&&dem.placePop<5000)?'rural':'urban';setWhy=`OSM: ${dem.placeName} (${pt}${dem.placePop?', '+fmt(dem.placePop,0)+' people':''})`;}
+  else if(/village|hamlet|isolated|locality|farm/.test(pt)){set='rural';setWhy=`OSM: ${dem.placeName} is a ${pt}`;}
+  else{set=ctx.pop<=5000?'rural':'urban';setWhy=pt?`OSM place type ${pt}`:'no OSM place tag — judged from community size';}
+  // baseline and adjustment
+  const g=v=>v==null?null:Math.max(0,100-v);
+  const natTot=g(d&&d.basw),natSet=g(d&&(set==='rural'?d.basw_ru:d.basw_ur));
+  const regGap=sub?g(sub.Basic):natTot;
+  let ratio=null;if(natTot!=null&&natSet!=null&&natTot>=0.5)ratio=Math.min(3,Math.max(0.2,natSet/natTot));
+  let est=regGap!=null?(ratio!=null?regGap*ratio:regGap):natSet;est=est==null?null:Math.min(100,est);
+  const smSet=g(d&&(set==='rural'?d.smdw_ru:d.smdw_ur)),smTot=g(d&&d.smdw);
+  let estSM=smSet!=null?(sub&&natTot>0.5&&regGap!=null?smSet*Math.min(3,Math.max(0.3,regGap/natTot)):smSet):null;if(estSM!=null)estSM=Math.min(100,Math.max(estSM,est||0));
+  // local evidence
+  const ev=[];const add=(e,t)=>ev.push({e,t});
+  if(ctx.utility)add(-1,`A registered water supplier covers this area (${esc(ctx.utility)}).`);
+  else if(set==='rural')add(1,'No registered water utility found for this point.');
+  if(ctx.irca!=null&&!isNaN(ctx.irca)){const v=+ctx.irca;add(v>35?2:v>14?1:v<=5?-1:0,`Tap-water risk index IRCA ${fmt(v,1)} (${v<=5?'no risk':v<=14?'low':v<=35?'medium':v<=80?'high':'unfit'}).`);}
+  if(ctx.micro&&ctx.micro.max>0)add(1,`Faecal contamination recorded nearby (${esc(ctx.micro.name)}).`);
+  if(ctx.wpdx&&ctx.wpdx.n){const f=ctx.wpdx.func;add(f<0.6?1:f>0.85?-1:0,`${fmt(f*100,0)}% of ${ctx.wpdx.n} mapped water points are functional (WPdx).`);}
+  if(sub&&sub['Surface water']!=null&&sub['Surface water']>=5)add(1,`${fmt(sub['Surface water'],0)}% of the region still drinks surface water.`);
+  if(ctx.grid&&ctx.grid.cls==='zni')add(1,'Non-interconnected zone: pumping and treatment depend on a few hours of diesel power a day.');
+  const works=osm&&osm.cnt?(osm.cnt['Water works']||0):0;
+  if(set==='rural'&&!works&&!ctx.utility)add(1,`No water treatment works mapped within ${ctx.r} km.`);
+  if(ctx.salineArea)add(1,'Mapped saline-groundwater area: wells are likely brackish.');
+  if(ctx.need&&ctx.need.sub&&ctx.need.sub.country&&ctx.need.sub.country.rural_q1&&set==='rural'){const q=g(ctx.need.sub.country.rural_q1.Basic);if(q!=null)add(0,`Nationally, ${fmt(q,0)}% of the poorest rural fifth lack basic water — the upper bound for poor rural communities.`);}
+  const score=ev.reduce((a,x)=>a+x.e,0);
+  const L=['low','moderate','high','critical'];let li=est==null?1:est<5?0:est<15?1:est<30?2:3;
+  if(score>=2)li=Math.min(3,li+1);else if(score<=-2)li=Math.max(0,li-1);
+  const level=L[li];const cls=li>=3?'bad':li>=2?'bad':li>=1?'warn':'ok';
+  setStatus(c,`${level} need · ~${fmt(est,0)}% lack basic water (${set})`,li>=2?'bad':li>=1?'warn':'ok');
+  html(c,`<div style="font-size:15px"><span class="pill ${cls}">${level.toUpperCase()}</span> &nbsp;About <b>${fmt(est,0)}%</b> of people here are likely to lack even basic drinking water${estSM!=null?`, and about <b>${fmt(estSM,0)}%</b> lack safely managed water`:''}.</div>`);
+  html(c,`<dl class="kv"><dt>Settlement</dt><dd><b>${set}</b> — ${esc(setWhy)}</dd>
+    <dt>Regional baseline</dt><dd>${sub?`JMP region “${esc(sub.region)}” (${sub.year}): ${fmt(regGap,0)}% lack basic (all population)`:`national, all population: ${fmt(natTot,0)}% lack basic`}</dd>
+    <dt>${set} adjustment</dt><dd>${ratio!=null?`×${fmt(ratio,2)} — nationally ${set} areas have ${fmt(natSet,0)}% without basic water vs ${fmt(natTot,0)}% overall (JMP ${esc(d.basw_y||'')})`:'not available'}</dd></dl>`);
+  if(ev.length)html(c,'<b>Local evidence</b><ul class="plain">'+ev.map(x=>`<li>${x.e>0?'▲':x.e<0?'▼':'•'} ${x.t}</li>`).join('')+`</ul><div class="hint">▲ raises the need level, ▼ lowers it. Net ${score>0?'+':''}${score}${score>=2?' → level raised one step':score<=-2?' → level lowered one step':''}.</div>`);
+  html(c,'<div class="hint">Model estimate, not a measurement: regional WHO/UNICEF survey value × national rural/urban gap ratio, then adjusted by local evidence. Confirm with a household survey or the municipal water register before committing.</div>');
+  src(c,'WHO/UNICEF JMP (national and subnational), OSM, utility registers, WPdx, INS IRCA','https://washdata.org/data');
+  return {est,estSM,level,li,set,score,ev};
+}
 async function adDesalNearby(lat,lon){
   const c=card('desal','Desalination plants nearby (existing & planned)','system');
   try{
@@ -427,7 +475,7 @@ const dossier=$('#dossier');
 const cards={};
 const GROUPS=[['site','Site'],['sources','Water sources & quantity'],['quality','Water quality'],['system','Existing water system'],['energy','Solar & plant sizing'],['coverage','Data coverage']];
 const groupEl={};let progressEl=null,progressItems={};
-const SRC_LABELS={loc:'Place & elevation (OSM, Open-Meteo)',solar:'Solar & rain (NASA POWER)',osm:'Water bodies & infrastructure (OpenStreetMap)',flow:'River discharge (GloFAS)',demand:'Community & demand',usgs:'USGS gauges & wells',wqp:'Water Quality Portal (chemistry, E. coli)',util:'EPA water utility',echo:'EPA ECHO wastewater',hubeau:"Hub'Eau (eau potable, nappes, rivières)",'co-irca':'INS SIVICAP (IRCA)','co-q':'IDEAM water quality','co-st':'IDEAM stations','co-sui':'Superservicios RUPS',whymap:'WHYMAP global hydrogeology',need:'Water access (WHO/UNICEF JMP)',desal:'Desalination plants nearby',gebco:'GEBCO sea depth','br-st':'ANA hydromet network','br-gw':'RIMAS groundwater wells','br-ete':'ANA sewage plants','br-note':'Brazil quality (pending)',wpdx:'WPdx water points',bgs:'Africa Groundwater Atlas (BGS)',portals:'National portals',nat:'National network',grid:'Electricity grid (OSM, HIFLD, IPSE ZNI, World Bank)',feed:'Feed-water sizing',econ:'Energy cost: grid vs solar',cov:'Coverage report'};
+const SRC_LABELS={loc:'Place & elevation (OSM, Open-Meteo)',solar:'Solar & rain (NASA POWER)',osm:'Water bodies & infrastructure (OpenStreetMap)',flow:'River discharge (GloFAS)',demand:'Community & demand',usgs:'USGS gauges & wells',wqp:'Water Quality Portal (chemistry, E. coli)',util:'EPA water utility',echo:'EPA ECHO wastewater',hubeau:"Hub'Eau (eau potable, nappes, rivières)",'co-irca':'INS SIVICAP (IRCA)','co-q':'IDEAM water quality','co-st':'IDEAM stations','co-sui':'Superservicios RUPS',whymap:'WHYMAP global hydrogeology',need:'Water access (WHO/UNICEF JMP)',localneed:'Water need at this location',desal:'Desalination plants nearby',gebco:'GEBCO sea depth','br-st':'ANA hydromet network','br-gw':'RIMAS groundwater wells','br-ete':'ANA sewage plants','br-note':'Brazil quality (pending)',wpdx:'WPdx water points',bgs:'Africa Groundwater Atlas (BGS)',portals:'National portals',nat:'National network',grid:'Electricity grid (OSM, HIFLD, IPSE ZNI, World Bank)',feed:'Feed-water sizing',econ:'Energy cost: grid vs solar',cov:'Coverage report'};
 let scanT0=0,scanTimer=null;
 function scaffold(){dossier.innerHTML='';progressEl=document.createElement('div');progressEl.className='status';progressEl.innerHTML='<div class="hd"><span>Scanning…</span><span class="t">0 s</span></div><ul></ul>';dossier.appendChild(progressEl);progressItems={};scanT0=Date.now();clearInterval(scanTimer);scanTimer=setInterval(()=>{const t=progressEl.querySelector('.hd .t');if(t&&!progressEl.classList.contains('complete'))t.textContent=Math.round((Date.now()-scanT0)/1000)+' s';},1000);for(const [id,label] of GROUPS){const g=document.createElement('div');g.className='grp';g.id='g-'+id;g.hidden=true;g.innerHTML=`<h3>${esc(label)}</h3>`;dossier.appendChild(g);groupEl[id]=g;}}
 function progress(id,state){if(!progressEl)return;let it=progressItems[id];if(!it){it=document.createElement('li');it.innerHTML=`<i></i><span>${esc(SRC_LABELS[id]||id)}</span><em class="ms"></em>`;it.dataset.t0=Date.now();progressEl.querySelector('ul').appendChild(it);progressItems[id]=it;}it.className=state;if(state!=='run')it.querySelector('.ms').textContent=((Date.now()-(+it.dataset.t0))/1000).toFixed(1)+' s';const n=Object.values(progressItems),d=n.filter(x=>x.className!=='run').length,bad=n.filter(x=>x.className==='err').length;progressEl.querySelector('.hd span').textContent=d<n.length?`Fetching ${d}/${n.length} sources…`:`Scan complete — ${n.length} sources${bad?`, ${bad} failed`:''}`;}
@@ -577,7 +625,7 @@ async function adOSM(lat,lon,r){
     cov('Mapped water bodies / infrastructure',feats.length?'ok':'none',feats.length?`${feats.length} OSM features`:'nothing mapped in OSM');
     cov('Wastewater treatment (OSM)',cnt['Wastewater plant']?'ok':'none',cnt['Wastewater plant']?`${cnt['Wastewater plant']} plant(s)`:'no WWTP mapped');
     places.sort((a,b)=>a.d-b.d);
-    return {coast,places,wells:cnt['Well']||0,desal:cnt['Desalination plant']||0};
+    return {coast,places,wells:cnt['Well']||0,desal:cnt['Desalination plant']||0,cnt};
   }catch(e){fail(c,e);cov('Mapped water bodies / infrastructure','missing','Overpass unreachable');return {coast:false,places:[]};}
 }
 
@@ -598,7 +646,7 @@ function adDemand(places,wp){
   html(c,`<dl class="kv"><dt>Population used</dt><dd><b>${fmt(pop,0)}</b> ${assumed?'<span class="pill warn">assumed</span> no OSM population tag nearby — enter the community size above and press Enter':manual?'(entered)':pick?((pick===small||pick.pop<=20000)?`(nearest OSM ${esc(pick.place)}: ${esc(pick.name)}, ${fmt(pick.d,1)} km)`:`(nearest place is the city of ${esc(pick.name)}, ${fmt(pick.d,1)} km — for a community-scale plant enter its population above)`):''}</dd><dt>Demand basis</dt><dd>${lpcd} L/person/day + 15% losses</dd><dt>Average demand</dt><dd><b>${fmt(Q,1)}</b> m³/day · design ${fmt(Q*1.3,0)} m³/day (peak ×1.3)</dd></dl>`);
   if(near.length>1)html(c,`<div class="hint">Other places with population: ${near.filter(p=>p!==pick).map(p=>`${esc(p.name)} ${fmt(p.pop,0)} (${fmt(p.d,0)} km)`).join('; ')}</div>`);
   src(c,'OpenStreetMap place tags; WorldPop/GHSL in v1');
-  return {pop,Q,assumed};
+  return {pop,Q,assumed,place:pick?pick.place:null,placeName:pick?pick.name:null,placeD:pick?pick.d:null,placePop:pick?pick.pop:null};
 }
 
 async function adUSGS(lat,lon,r){
@@ -1219,7 +1267,7 @@ function renderBrief(ctx){
     {cls:mCls||(ctx.irca!=null?(ctx.irca<=5?'ok':ctx.irca<=35?'warn':'bad'):'warn'),l:micro?'E. coli / coliforms':ctx.irca!=null?'IRCA risk index':'E. coli / coliforms',v:micro?(micro.unit==='positive tests'?`${micro.max?'detected':'absent'}`:micro.max>0?`${fmt(micro.max,0)}<small>max /100 mL</small>`:'0<small>/100 mL</small>'):ctx.irca!=null?`${fmt(ctx.irca,1)}<small>/100</small>`:'not sampled',n:micro?`${micro.n} samples · last ${String(micro.last).slice(0,7)}`:ctx.irca!=null?'tap-water risk (INS); ≤5 no risk':'no bacteriology in open data'},
     {cls:util?'ok':'warn',l:'Existing supply',v:util?'utility':'self-supplied',n:util?esc(util):'no registered system found'},
     {cls:covCls,l:'Data coverage',v:`${okN}<small>/ ${totN}</small>`,n:ctx.wwtp?`WWTP nearby${ctx.wwtpName?': '+esc(ctx.wwtpName):''}`:'no treatment plant mapped'},
-    (ctx.need?.sub?{cls:ctx.need.sub.Basic>=95?'ok':ctx.need.sub.Basic>=85?'warn':'bad',l:'Water need (region)',v:`${fmt(100-ctx.need.sub.Basic,0)}<small>% lack basic</small>`,n:`${esc(ctx.need.sub.region)} ${ctx.need.sub.year} · rural poorest: ${fmt(100-(ctx.need.sub.country.rural_q1?.Basic??100),0)}% lack basic`}:
+    (ctx.localNeed&&ctx.localNeed.est!=null?{cls:ctx.localNeed.li>=2?'bad':ctx.localNeed.li>=1?'warn':'ok',l:'Water need here (est.)',v:`${fmt(ctx.localNeed.est,0)}<small>% lack basic · ${esc(ctx.localNeed.level)}</small>`,n:`${esc(ctx.localNeed.set)}${ctx.need?.sub?' · region '+esc(ctx.need.sub.region)+' '+ctx.need.sub.year:''}${ctx.localNeed.estSM!=null?' · ~'+fmt(ctx.localNeed.estSM,0)+'% lack safely managed':''}`}:ctx.need?.sub?{cls:ctx.need.sub.Basic>=95?'ok':ctx.need.sub.Basic>=85?'warn':'bad',l:'Water need (region)',v:`${fmt(100-ctx.need.sub.Basic,0)}<small>% lack basic</small>`,n:`${esc(ctx.need.sub.region)} ${ctx.need.sub.year} · rural poorest: ${fmt(100-(ctx.need.sub.country.rural_q1?.Basic??100),0)}% lack basic`}:
     {cls:ctx.need?.gapRu==null?'':ctx.need.gapRu>=50?'bad':ctx.need.gapRu>=20?'warn':'ok',l:'Rural water need (national)',v:ctx.need?.gapRu!=null?`${fmt(ctx.need.gapRu,0)}<small>% lack safe water</small>`:'—',n:ctx.need?.d?`${esc(ctx.need.d.name)} rural, JMP ${esc(ctx.need.d.smdw_y||ctx.need.d.basw_y||'')}`:'no JMP estimate'}),
     {cls:ctx.grid?(ctx.grid.cls==='near'?(ctx.grid.rel==='poor'?'warn':'ok'):ctx.grid.cls==='mid'?'warn':ctx.grid.cls==='zni'?'bad':ctx.grid.cls==='none'||ctx.grid.cls==='far'?'bad':ctx.grid.cls==='unmapped'?'warn':''):'',l:'Electricity grid',v:ctx.grid?(ctx.grid.cls==='zni'?`${fmt(ctx.grid.zni?.hMed,0)}<small>h/day (ZNI)</small>`:ctx.grid.dLine!=null?`${fmt(ctx.grid.dLine,ctx.grid.dLine<10?1:0)}<small>km to line${ctx.grid.kv?' · '+fmt(ctx.grid.kv,0)+' kV':''}</small>`:ctx.grid.cls==='unmapped'?'unmapped':'off-grid'):'<small>querying…</small>',n:ctx.grid?(ctx.grid.util?esc(ctx.grid.util.name):ctx.grid.rel?`national reliability: ${esc(ctx.grid.rel)}`:ctx.grid.nearestPlant?`nearest plant: ${esc(ctx.grid.nearestPlant.name)} (${esc(ctx.grid.nearestPlant.src||'?')})`:'no line mapped'):'grid lookup still running'},
     {cls:ctx.ds?.nearest?'info':ctx.ds?.nearestPlanned?'warn':'',l:'Desal nearby',v:ctx.ds?.nearest?`${fmt(ctx.ds.nearest.d,0)}<small>km</small>`:ctx.ds?.nearestPlanned?`${fmt(ctx.ds.nearestPlanned.d,0)}<small>km ${/cancel/i.test(ctx.ds.nearestPlanned.status||'')?'cancelled':/operat|existing|built|commission|inaugur|deliver/i.test(ctx.ds.nearestPlanned.status||'')?'operating':'planned'}</small>`:'none ≤150 km',n:ctx.ds?.nearest?esc(ctx.ds.nearest.name):ctx.ds?.nearestPlanned?esc(ctx.ds.nearestPlanned.name):'no plant mapped'}];
@@ -1228,7 +1276,8 @@ function renderBrief(ctx){
   else if(!best)verdict.push('No feed water with a known salinity was found in open data; the sizing below is for seawater or reuse only, or needs a well test.');
   if(micro&&micro.max>0)verdict.push(`Bacteriological contamination is recorded nearby (${esc(micro.name)} up to ${fmt(micro.max,0)} ${esc(micro.unit||'')}), which strengthens the case for a treated supply.`);
   if(!util)verdict.push('No registered water utility serves this point, so a community plant would be a new supply rather than a replacement.');
-  if(ctx.need?.gapRu!=null&&ctx.need.gapRu>=20)verdict.push(`Nationally, ${fmt(ctx.need.gapRu,0)}% of the rural population lacks safely managed water (JMP), which supports prioritising this region.`);
+  if(ctx.localNeed&&ctx.localNeed.est!=null)verdict.push(`Water need here is estimated <b>${esc(ctx.localNeed.level)}</b>: about ${fmt(ctx.localNeed.est,0)}% of people in this ${esc(ctx.localNeed.set)} area likely lack basic drinking water${ctx.localNeed.estSM!=null?` and ${fmt(ctx.localNeed.estSM,0)}% lack safely managed water`:''}.`);
+  else if(ctx.need?.gapRu!=null&&ctx.need.gapRu>=20)verdict.push(`Nationally, ${fmt(ctx.need.gapRu,0)}% of the rural population lacks safely managed water (JMP), which supports prioritising this region.`);
   if(ctx.ds?.nearest)verdict.push(`An existing desalination plant (${esc(ctx.ds.nearest.name)}) operates ${fmt(ctx.ds.nearest.d,0)} km away — a reference for feed water, permits and operators.`);
   if(ctx.grid){const gd=ctx.grid;if(gd.cls==='zni')verdict.push(`The locality is in Colombia's non-interconnected zone with about ${fmt(gd.zni?.hMed,0)} h/day of generator service, so a solar-battery plant is the realistic design and can share the existing genset.`);else if(gd.cls==='unmapped')verdict.push(`No grid line is mapped in OpenStreetMap here, although the country is ${fmt(gd.wb['EG.ELC.ACCS.ZS'].v,0)} % electrified — confirm the nearest line before choosing between hybrid and off-grid.`);else if(gd.cls==='none'||gd.cls==='far')verdict.push(`No grid line is mapped within reach (${esc(gd.label)}), so plan fully off-grid.`);else if(gd.cls==='near'&&gd.rel==='poor')verdict.push(`The grid is close (${fmt(gd.dLine,1)} km) but nationally unreliable (${esc(gd.rel)}), so keep storage and a standby set.`);else if(gd.cls==='near')verdict.push(`A ${gd.kv?fmt(gd.kv,0)+' kV ':''}line passes ${fmt(gd.dLine,1)} km away${gd.util?' ('+esc(gd.util.name)+')':''}, so a grid-tied PV plant without battery is an option.`);}
   if(ctx.econ)verdict.push(`Energy economics: <b>${esc(ctx.econ.win)}</b> is the cheapest way to power the plant over 20 years; solar off-grid wins above a tariff of ${fmt(ctx.econ.breakeven,2)} $/kWh (local ${fmt(ctx.econ.tariff,2)}). Full water cost about <b>${fmt(ctx.econ.lcow,2)} $/m³</b>${ctx.econ.lcow<ctx.econ.truck?`, versus ~${ctx.econ.truck} $/m³ for trucked water`:''}.`);
@@ -1262,6 +1311,7 @@ async function runNational(cc,lat,lon,r,loc){
       if(AFRICA.has(cc)){const ag=await adAfricaGW(lat,lon);if(ag.tds!=null&&n.tds==null){n.tds=ag.tds;n.tdsLabel='Regional groundwater (Africa Groundwater Atlas SEC)';}}
       adPortals(cc,loc.addr.country);
       if(!PORTALS[cc]&&!wp){const c=card('nat','National monitoring networks','quality');setStatus(c,'no adapter yet','warn');html(c,`<div>No national adapter or portal listed for <b>${esc(loc.addr.country||cc||'this country')}</b>. Global layers (OSM, NASA POWER, GloFAS, WHYMAP, JMP) still apply.</div>`);cov('National monitoring networks','none','no adapter for '+(cc||'country'));}
+      n.wpdx=wp||null;
       if(wp&&wp.fcN)n.micro={name:'Fecal coliform presence (WPdx)',n:wp.fcN,max:wp.fcPos?1:0,median:null,unit:'positive tests',last:''};
       n.wwtp=coverage.some(x=>/Wastewater treatment \(OSM\)/.test(x.topic)&&x.state==='ok');
     }
@@ -1291,6 +1341,7 @@ async function scan(lat,lon){
     const a3=countryA3(cc);const need=await adNeed(a3,cc,loc);const ds=await adDesalNearby(lat,lon);
     const ctx={lat,lon,r,loc,Q:dem.Q,pop:dem.pop,assumed:dem.assumed,remoteKm,salineArea:!!gw.saline,need,ds,solar,coast:osm.coast,wells:osm.wells,tds:null,wwtp:false,utility:null,micro:null,wwtpName:null};
     const nat=await natP;Object.assign(ctx,nat);
+    ctx.localNeed=adLocalNeed(ctx,osm,dem);
     ctx.grid=await Promise.race([gridP,new Promise(r=>setTimeout(()=>r(null),40000))]);
     if(!ctx.grid)gridP.then(async g=>{ctx.grid=g;gridStrategy(ctx);if(cards.econ){cards.econ.el.remove();delete cards.econ;}await adEconomics(ctx);renderBrief(ctx);});
     if(nat.wellsAdd)ctx.wells+=nat.wellsAdd;
