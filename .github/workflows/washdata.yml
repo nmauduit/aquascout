@@ -10,13 +10,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: pip install -q openpyxl
+      - run: pip install -q openpyxl pycountry
       - name: Download from washdata.org
         run: python3 tools/fetch_washdata.py
       - name: Convert inequalities workbooks
         run: |
           python3 tools/jmp_inequalities_to_json.py washdata/*.xlsm
           python3 tools/remap_jmp.py
+          python3 tools/jmp_world_to_json.py washdata/WLD_household.xlsx
       - name: Keep raw files as an artifact (90 days)
         uses: actions/upload-artifact@v4
         with:
@@ -27,5 +28,5 @@ jobs:
         run: |
           git config user.name "aquascout-bot"
           git config user.email "actions@users.noreply.github.com"
-          git add data/jmp-subnational.json tools/jmp_unmapped.json
+          git add data/jmp-subnational.json data/jmp-components.json tools/jmp_unmapped.json
           git diff --cached --quiet || (git commit -m "JMP subnational data refresh (washdata.org)" && git push)
