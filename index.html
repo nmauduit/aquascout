@@ -316,7 +316,11 @@ let subData=null,admin1Geo=null,subLayer=null;
 const subGroup=L.layerGroup();
 async function loadSub(){if(!subData){try{subData=await getJSON('data/jmp-subnational.json');}catch(e){subData={};}}return subData;}
 async function loadAdmin1(){if(!admin1Geo)admin1Geo=await getJSON('data/admin1.geojson',{timeout:60000});return admin1Geo;}
-const normN=t=>String(t||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'');
+const normN=t=>String(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\b(county|province|provincia|department|departamento|departement|district|distrito|state|estado|region|región|governorate|gouvernorat|wilaya|oblast|prefecture|parish|division|municipality|of|de|del|la|el|du|des|the)\b/g,' ').replace(/[^a-z0-9]/g,'');
+
+function pipRing(x,y,r){let ins=false;for(let i=0,j=r.length-1;i<r.length;j=i++){const xi=r[i][0],yi=r[i][1],xj=r[j][0],yj=r[j][1];if(((yi>y)!==(yj>y))&&(x<(xj-xi)*(y-yi)/((yj-yi)||1e-12)+xi))ins=!ins;}return ins;}
+function pipGeom(x,y,g){if(!g)return false;const polys=g.type==='Polygon'?[g.coordinates]:g.type==='MultiPolygon'?g.coordinates:[];for(const p of polys){if(p[0]&&pipRing(x,y,p[0])&&!p.slice(1).some(h=>pipRing(x,y,h)))return true;}return false;}
+async function admin1At(lat,lon,a3){try{const geo=await loadAdmin1();for(const f of geo.features){if(a3&&f.properties.a3!==a3)continue;if(pipGeom(lon,lat,f.geometry))return f.properties.n;}}catch(e){}return null;}
 function subLookup(sub,a3,admName){const c=sub[a3];if(!c)return null;const n=normN(admName);for(const [reg,v] of Object.entries(c.regions)){if((v.admin1||[]).some(x=>normN(x)===n)||normN(reg)===n)return {region:reg,...v,year:c.year,country:c};}return null;}
 const subColor=basic=>basic==null?'#9aa5ad':needColor(basic);
 subGroup.on('add',async()=>{$('#needlegend').style.display='flex';if(subLayer)return;try{const [geo,sub]=await Promise.all([loadAdmin1(),loadSub()]);
@@ -392,7 +396,7 @@ async function adNeed(cc3,cc2,loc){
     try{const who=await loadWHO();const m=who.SDGWSHBOD&&who.SDGWSHBOD[cc3];const w=who.WSH_DOMESTIC_WASTE_SAFELY_TREATED&&who.WSH_DOMESTIC_WASTE_SAFELY_TREATED[cc3];if(m||w)html(c,`<div><b>WHO:</b> ${m?`${dotc(m.v<5?'ok':m.v<25?'warn':'bad')}${fmt(m.v,1)} deaths per 100,000 attributable to unsafe water, sanitation and hygiene (SDG 3.9.2, ${m.y})`:''}${m&&w?' · ':''}${w?`${fmt(w.v,0)}% of domestic wastewater safely treated (${w.y})`:''}</div>`);}catch(e){}
     html(c,`
       <div class="hint">${esc(d.name)}, JMP ${esc(d.smdw_y||d.basw_y||'')}. National figures; rural gaps inside a country can be far larger (e.g. La Guajira vs Bogotá). Subnational JMP estimates are a to-do. Turn on the "Water need" map layer to compare countries.</div>`);
-    let sub=null;try{const sd=await loadSub();const st=loc.addr&&(loc.addr.state||loc.addr.region||loc.addr.province);sub=st?subLookup(sd,cc3,st):null;
+    let sub=null;try{const sd=await loadSub();let st=null;if(sd[cc3]){const a1=(loc.lat!=null)?await admin1At(loc.lat,loc.lon,cc3):null;if(a1&&subLookup(sd,cc3,a1)){st=a1;}}if(!st)st=loc.addr&&(loc.addr.state||loc.addr.region||loc.addr.province);sub=st?subLookup(sd,cc3,st):null;
       if(sub){html(c,`<div style="margin-top:6px"><b>Subnational — ${esc(st)}</b> (JMP region “${esc(sub.region)}”, survey ${sub.year}): at least basic water <b>${fmt(sub.Basic,0)}%</b>${dotc(sub.Basic>=95?'ok':sub.Basic>=85?'warn':'bad')} · unimproved ${fmt(sub.Unimproved,0)}% · surface water ${fmt(sub['Surface water'],0)}% — all population.<br>National rural, poorest quintile: basic <b>${fmt(sub.country.rural_q1?.Basic,0)}%</b>, surface water <b>${fmt(sub.country.rural_q1?.['Surface water'],0)}%</b> — the population a community plant targets.</div>`);cov('Water access — subnational (JMP)','ok',`${st}: basic ${fmt(sub.Basic,0)}%`);}
       else if(sd[cc3]){html(c,`<div class="hint">Subnational JMP data exists for this country but “${esc(st||'?')}” is not mapped to a survey region yet (tools/jmp_region_map.json).</div>`);}
     }catch(e){}
@@ -537,8 +541,8 @@ async function adLocation(lat,lon){
     setStatus(c,cc||'?','ok');
     html(c,`<dl class="kv"><dt>Place</dt><dd>${esc(r.display_name||'—')}</dd><dt>Coordinates</dt><dd class="mono">${lat.toFixed(5)}, ${lon.toFixed(5)}</dd><dt>Elevation</dt><dd>${elev?fmt(elev.elevation[0],0)+' m':'–'}</dd><dt>Country</dt><dd>${esc(a.country||'—')} (${cc||'?'})</dd></dl>`);
     src(c,'OpenStreetMap Nominatim · Open-Meteo elevation');
-    return {cc,addr:a,elev:elev?elev.elevation[0]:null};
-  }catch(e){fail(c,e);return {cc:'',addr:{}};}
+    return {cc,addr:a,elev:elev?elev.elevation[0]:null,lat,lon};
+  }catch(e){fail(c,e);return {cc:'',addr:{},lat,lon};}
 }
 
 async function adSolar(lat,lon){
