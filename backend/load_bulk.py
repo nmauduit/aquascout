@@ -31,21 +31,25 @@ if kind == "hydrowaste":
              "out": [num(r["LON_OUT"]), num(r["LAT_OUT"])]}
         rows.setdefault("wwtp", []).append((r["WASTE_ID"], clean(r["WWTP_NAME"]), p, lon, lat))
 elif kind == "salinity":
+    # aggregate stations into ~2 km cells (median EC) — the US groundwater record alone has >150k wells
+    import statistics
+    CELL = 0.02
     for f in files:
         theme = "sal_gw" if "Ground" in f else "sal_rv" if "River" in f else "sal_lk"
-        seen = set()
+        cells = {}
         for r in csv.DictReader(open(f, encoding="utf-8-sig", errors="replace")):
             lat, lon = num(r.get("Lat")), num(r.get("Lon"))
             ec = num(r.get("median"))
-            if lat is None or lon is None or ec is None or not (-90 <= lat <= 90 and -180 <= lon <= 180): continue
-            sid = clean(r.get("Station_ID"))[:80] or f"{lat},{lon}"
-            if sid in seen: sid = f"{sid}@{lat:.4f},{lon:.4f}"
-            seen.add(sid)
-            p = {"ec": round(ec, 1), "max": num(r.get("max")), "min": num(r.get("min")), "n": int(num(r.get("n")) or 0),
-                 "y0": (r.get("Start_date") or "")[:4], "y1": (r.get("End_date") or "")[:4],
-                 "src": clean(r.get("Source")), "coast": r.get("Coastal_location") == "Yes"}
-            if r.get("median_TDS"): p["tds"] = num(r["median_TDS"])
-            rows.setdefault(theme, []).append((sid, None, p, lon, lat))
+            if lat is None or lon is None or ec is None or ec <= 0 or not (-90 <= lat <= 90 and -180 <= lon <= 180): continue
+            k = (round(lat / CELL), round(lon / CELL))
+            c = cells.setdefault(k, {"ec": [], "n": 0, "y1": "", "coast": False, "la": 0.0, "lo": 0.0})
+            c["ec"].append(ec); c["n"] += int(num(r.get("n")) or 0); c["la"] += lat; c["lo"] += lon
+            c["y1"] = max(c["y1"], (r.get("End_date") or "")[:4]); c["coast"] |= r.get("Coastal_location") == "Yes"
+        for (a, b), c in cells.items():
+            m = len(c["ec"])
+            p = {"ec": round(statistics.median(c["ec"]), 0), "st": m, "n": c["n"], "y1": c["y1"]}
+            if c["coast"]: p["c"] = 1
+            rows.setdefault(theme, []).append((f"{a}_{b}", None, p, round(c["lo"] / m, 4), round(c["la"] / m, 4)))
 else:
     sys.exit("unknown kind " + kind)
 
