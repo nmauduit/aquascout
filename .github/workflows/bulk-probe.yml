@@ -7,18 +7,11 @@ jobs:
     steps:
       - name: Tools
         run: sudo apt-get update -qq && sudo apt-get install -y -qq gdal-bin unzip
-      - name: HydroWASTE
-        run: |
-          curl -sSL --retry 3 --max-time 600 -o hw.zip https://figshare.com/ndownloader/files/31910714
-          ls -la hw.zip; file hw.zip; unzip -l hw.zip
-          unzip -o -q hw.zip -d hw; find hw -type f | head
-          f=$(find hw -iname '*.csv' | head -1); [ -n "$f" ] && { head -c 1500 "$f"; echo; wc -l "$f"; }
-          s=$(find hw -iname '*.shp' -o -iname '*.gdb' -o -iname '*.gpkg' | head -1); [ -n "$s" ] && ogrinfo -so -al "$s" | head -60
       - name: Thorslund salinity summaries
         run: |
           B=https://hs.pangaea.de/bio/Salinity_database/Thorslund-vanVliet_2020
           for f in Groundwaters_summary Rivers_summary Lakes_Reservoirs_summary; do
-            curl -sSL --retry 3 --max-time 900 -o $f.csv $B/$f.csv; ls -la $f.csv; head -3 $f.csv | cut -c1-600; wc -l $f.csv
+            curl -sSL --retry 3 --max-time 900 -o $f.csv $B/$f.csv; ls -la $f.csv; head -3 $f.csv | cut -c1-700; wc -l $f.csv || true
           done
       - name: gridfinder
         run: |
