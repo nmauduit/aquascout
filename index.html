@@ -1378,7 +1378,7 @@ function adCoverage(){
 function renderBrief(ctx){
   const g=groupEl.site;g.hidden=false;g.querySelectorAll('.brief').forEach(x=>x.remove());const b=document.createElement('div');b.className='brief';
   const loc=ctx.loc||{};const name=(loc.addr&&(loc.addr.village||loc.addr.town||loc.addr.city||loc.addr.municipality||loc.addr.county))||'This point';const region=[loc.addr?.state,loc.addr?.country].filter(Boolean).join(', ');
-  const sol=ctx.solar;const solCls=!sol?'na':sol.worst>=3.5?'ok':sol.worst>=2.5?'warn':'bad';
+  const sol=ctx.solar;const solCls=!sol?'na':sol.ann>=4.5?'ok':sol.ann>=3.5?'warn':'bad';
   const dem=ctx.Q?`${fmt(ctx.Q,0)}<small>m³/d</small>`:'—';
   const best=ctx.best;const bestCls=best?best.cl?.cls||'info':'warn';
   const micro=ctx.micro;const mCls=!micro?'':micro.max>0?'bad':'ok';
@@ -1386,7 +1386,7 @@ function renderBrief(ctx){
   const covCls=okN/Math.max(1,totN)>=0.6?'ok':'na';
   const IRCset=ctx.localNeed&&ctx.localNeed.safeSrc==='IRCA'&&(ctx.localNeed.set==='rural'?ctx.ircaR:ctx.ircaU)!=null;const IRC=IRCset?ctx.localNeed.safeV:ctx.irca;
   const tiles=[
-    {cls:solCls,l:'Sun · worst month',v:sol?`${fmt(sol.worst,1)}<small>kWh/m²/d</small>`:'—',n:sol?`${fmt(sol.ann,1)} annual · ${fmt(sol.annRain,0)} mm rain`:'no solar data'},
+    {cls:solCls,l:'Sun · year average',v:sol?`${fmt(sol.ann,1)}<small>kWh/m²/d</small>`:'—',n:sol?`worst month ${fmt(sol.worst,1)} (sizing basis) · ${fmt(sol.annRain,0)} mm rain`:'no solar data'},
     {cls:ctx.assumed?'na':'info',l:'Demand',v:dem,n:ctx.assumed?`assumed ${fmt(ctx.pop,0)} people — enter real size`:`${fmt(ctx.pop,0)} people × 100 L`},
     {cls:bestCls,l:'Best feed water',v:best?esc(best.cl?best.cl.c:'?'):'none found',n:best?`${fmt(best.tds,0)} mg/L · ${fmt(best.sec,1)} kWh/m³`:'no source with known salinity'},
     {cls:mCls||(IRC!=null?(IRC<=5?'ok':IRC<=35?'warn':'bad'):'na'),l:micro?'E. coli / coliforms':IRC!=null?'IRCA risk index':'E. coli / coliforms',v:micro?(micro.unit==='positive tests'?`${micro.max?'detected':'absent'}`:micro.max>0?`${fmt(micro.max,0)}<small>max /100 mL</small>`:'0<small>/100 mL</small>'):IRC!=null?`${fmt(IRC,1)}<small>/100</small>`:'not sampled',n:micro?`${micro.n} samples · last ${String(micro.last).slice(0,7)}`:IRC!=null?`${IRCset?esc(ctx.localNeed.set)+' network':'municipal'} tap-water risk (INS); ≤5 no risk`:'no bacteriology in open data'},
