@@ -26,8 +26,18 @@
     [
      "El Tiempo — carrotanques a más de 40 barrios",
      "https://www.eltiempo.com/colombia/otras-ciudades/aguacero-dejo-tambien-sin-agua-a-gran-parte-de-santa-marta-a-traves-de-carrotanques-abastecen-a-mas-de-40-barrios-3480375"
+    ],
+    [
+     "Opinión Caribe — análisis del plan río Magdalena",
+     "https://www.opinioncaribe.com/2026/11/03/santa-marta-entre-la-verruga-y-el-milagro-del-agua/"
+    ],
+    [
+     "El Espectador — Gobierno descarta desalinizadoras",
+     "https://www.elespectador.com/ambiente/blog-el-rio/gobierno-descarta-proyecto-para-construir-plantas-desalinizadoras-para-santa-marta/"
     ]
-   ]
+   ],
+   "losses_pct": 60,
+   "alternatives": "Government plan (Oct 2026): (1) cut network losses from ~60% to 20% and rehabilitate wells — of ~1,255 L/s produced only ~753 L/s reaches users; target 20 h/day service within 4 years; (2) regional operator; (3) Magdalena River intake, 5,000 L/s, ~95 km conveyance with 3–4 pumping stations via the Ciénaga corridor, ~COP 3 trillion, horizon 2031, still at proposal stage (an Aug 2024 Barranquilla/Triple A version was 65.5 km). Closer Sierra Nevada rivers (Piedras, Manzanares, Gaira, Toribio, Córdoba; Guachaca/Buritaca proposed) already supply part of the city but fall sharply in dry seasons."
   },
   {
    "name": "San Andrés island",
