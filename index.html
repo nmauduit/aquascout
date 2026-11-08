@@ -223,7 +223,12 @@ const ecToTDS=us=>us*0.65; // µS/cm → mg/L, typical factor 0.55–0.75
 
 // ---------- map ----------
 const map=L.map('map',{zoomControl:true}).setView([20,-40],3);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
+const baseOSM=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);
+const baseSat=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Imagery © Esri, Maxar, Earthstar Geographics'});
+const baseTopo=L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{maxZoom:17,attribution:'© OpenTopoMap (CC-BY-SA), SRTM'});
+const baseLight=L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{maxZoom:19,attribution:'© OpenStreetMap, © CARTO'});
+const baseLabels=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,opacity:.9});
+baseSat.on('add',()=>baseLabels.addTo(map));baseSat.on('remove',()=>map.removeLayer(baseLabels));
 const gsw=L.tileLayer('https://storage.googleapis.com/global-surface-water/tiles2021/occurrence/{z}/{x}/{y}.png',{maxZoom:13,opacity:.7,attribution:'JRC Global Surface Water'});
 $('#gsw').addEventListener('change',e=>e.target.checked?gsw.addTo(map):map.removeLayer(gsw));
 const gebco=L.tileLayer.wms('https://www.gebco.net/data_and_products/gebco_web_services/web_map_service/mapserv?',{layers:'GEBCO_LATEST',format:'image/png',transparent:true,opacity:.6,attribution:'GEBCO'});
@@ -232,7 +237,7 @@ const ArcTile=L.TileLayer.extend({getTileUrl:function(c){const z=c.z,n=Math.pow(
 const whymap=new ArcTile('https://services.bgr.de/arcgis/rest/services/grundwasser/whymap_gwr/MapServer',{layerIds:'10,11',opacity:.45,attribution:'WHYMAP © BGR/UNESCO'});
 const bgsSEC=new ArcTile('https://map.bgs.ac.uk/arcgis/rest/services/Africa_Groundwater/Africa_Groundwater_v2/MapServer',{layerIds:'11',opacity:.55,attribution:'Africa Groundwater Atlas © BGS'});
 const bgsDepth=new ArcTile('https://map.bgs.ac.uk/arcgis/rest/services/Africa_Groundwater/Africa_Groundwater_v2/MapServer',{layerIds:'1',opacity:.55,attribution:'Africa Groundwater Atlas © BGS'});
-const ctl=L.control.layers(null,{'Surface water occurrence (JRC)':gsw,'Bathymetry (GEBCO)':gebco,'Groundwater resources & saline areas (WHYMAP)':whymap,'Africa: groundwater conductivity (BGS atlas)':bgsSEC,'Africa: depth to groundwater (BGS atlas)':bgsDepth},{collapsed:true,position:'topright'}).addTo(map);
+const ctl=L.control.layers({'Streets (OpenStreetMap)':baseOSM,'Satellite (Esri imagery + labels)':baseSat,'Terrain (OpenTopoMap)':baseTopo,'Light grey (CARTO) — best for choropleths':baseLight},{'Surface water occurrence (JRC)':gsw,'Bathymetry (GEBCO)':gebco,'Groundwater resources & saline areas (WHYMAP)':whymap,'Africa: groundwater conductivity (BGS atlas)':bgsSEC,'Africa: depth to groundwater (BGS atlas)':bgsDepth},{collapsed:true,position:'topright'}).addTo(map);
 let marker,circle,layerGroup=L.layerGroup().addTo(map);
 const colors={sea:'#2c5e8a',brackish:'#4f8a8b',fresh:'#2f8f5b',waste:'#7a5a3a'};
 function dot(lat,lon,kind,label){L.circleMarker([lat,lon],{radius:6,color:colors[kind],fillColor:colors[kind],fillOpacity:.8,weight:1}).bindPopup(label).addTo(layerGroup);}
