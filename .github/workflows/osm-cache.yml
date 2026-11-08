@@ -61,3 +61,7 @@ jobs:
             python3 backend/load_osm.py "$SLUG" power power.geojsonseq
             rm -f "$SLUG.osm.pbf" water.pbf power.pbf water.geojsonseq power.geojsonseq
           done
+      - name: Reclaim space (VACUUM FULL) and report size
+        run: |
+          psql "--dbname=$(echo "$SUPABASE_DB_URL" | xargs)" -c "vacuum (full, analyze) osm_feat;"
+          psql "--dbname=$(echo "$SUPABASE_DB_URL" | xargs)" -tAc "select region||': water '||feat_water||', power '||feat_power from osm_region order by 1; select 'osm_feat on disk: '||pg_size_pretty(pg_total_relation_size('osm_feat'))||' | database: '||pg_size_pretty(pg_database_size(current_database()));"

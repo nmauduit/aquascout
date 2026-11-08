@@ -68,7 +68,7 @@ select osm_id, theme, region, tags,
 from (select osm_id, theme, region, tags, st_makevalid(st_setsrid(st_geomfromgeojson(gj),4326)) g from stg where gj is not null) s
 where g is not null and not st_isempty(g)
   -- slim: unnamed ponds under 1 ha add nothing to a feasibility screen
-  and not (tags->>'natural' = 'water' and not tags ? 'name' and st_area(g::geography) < 10000)
+  and not (coalesce(tags->>'natural', '') = 'water' and not (tags ? 'name') and coalesce(st_area(g::geography), 0) < 10000)
 on conflict (region, theme, osm_id) do update set tags=excluded.tags, geom=excluded.geom, center=excluded.center, loaded_at=now();
 insert into osm_region (region, feat_{theme}, bbox, loaded_at)
 select '{region}', count(*) filter (where theme = '{theme}'), st_envelope(st_extent(center)::geometry), now() from osm_feat where region='{region}'
