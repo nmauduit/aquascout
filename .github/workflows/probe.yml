@@ -1,0 +1,18 @@
+name: Probe a washdata file (dev helper)
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'washdata.org download URL'
+        required: true
+        default: 'https://washdata.org/data/country/WLD/household/download'
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install -q openpyxl
+      - run: |
+          curl -sSL --max-time 300 -A "AquaScout/0.1 (open-data research tool)" -o f.xlsx "${{ github.event.inputs.url }}"
+          ls -la f.xlsx; file f.xlsx
+          python3 tools/probe_xlsx.py f.xlsx
