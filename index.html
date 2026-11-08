@@ -305,7 +305,7 @@ subGroup.on('add',async()=>{$('#needlegend').style.display='flex';if(subLayer)re
     onEachFeature:(f,l)=>{const m=subLookup(sub,f.properties.a3,f.properties.n);l.bindTooltip(m?`<b>${esc(f.properties.n)}</b> — JMP region “${esc(m.region)}”, ${m.year}<br>At least basic water: <b>${fmt(m.Basic,0)}%</b> · limited ${fmt(m.Limited,0)}% · unimproved ${fmt(m.Unimproved,0)}% · surface water ${fmt(m['Surface water'],0)}%<br><span style="opacity:.7">all population (urban + rural); national rural poorest quintile: basic ${fmt(m.country.rural_q1?.Basic,0)}%, surface ${fmt(m.country.rural_q1?.['Surface water'],0)}%</span>`:`<b>${esc(f.properties.n)}</b><br>not mapped to a JMP region yet`,{sticky:true});}});
   subLayer.addTo(subGroup);}catch(e){console.warn('sub layer',e);}});
 subGroup.on('remove',()=>{if(!map.hasLayer(needGroup))$('#needlegend').style.display='none';});
-ctl.addOverlay(subGroup,'Water need — subnational regions (JMP inequalities; CO so far)');
+ctl.addOverlay(subGroup,'Water need — subnational regions (JMP inequalities workbooks, ~100 countries)');
 
 // ---------- Desalination plants: OSM (existing) + curated (planned) ----------
 let desalOSM=null,desalOSMPromise=null,plannedList=null;

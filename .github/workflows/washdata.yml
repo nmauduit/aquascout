@@ -14,7 +14,9 @@ jobs:
       - name: Download from washdata.org
         run: python3 tools/fetch_washdata.py
       - name: Convert inequalities workbooks
-        run: python3 tools/jmp_inequalities_to_json.py washdata/*.xlsm
+        run: |
+          python3 tools/jmp_inequalities_to_json.py washdata/*.xlsm
+          python3 tools/remap_jmp.py
       - name: Keep raw files as an artifact (90 days)
         uses: actions/upload-artifact@v4
         with:

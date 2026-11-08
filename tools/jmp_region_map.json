@@ -1,10 +1,752 @@
 {
-  "COL": {
-    "Atlantica": ["La Guajira","Cesar","Magdalena","Atlántico","Bolívar","Sucre","Córdoba","San Andrés y Providencia"],
-    "Bogota": ["Bogota"],
-    "Central": ["Antioquia","Caldas","Risaralda","Quindío","Tolima","Huila","Caquetá"],
-    "Oriental": ["Norte de Santander","Santander","Boyacá","Cundinamarca","Meta"],
-    "Orinoquia/Amazonia": ["Arauca","Casanare","Vichada","Guainía","Guaviare","Vaupés","Amazonas","Putumayo"],
-    "Pacifica": ["Chocó","Valle del Cauca","Cauca","Nariño"]
-  }
+ "_readme": "Manual JMP-region → Natural Earth admin-1 tables. Keys are region names exactly as in the JMP workbook (leading numbers may be omitted). Only needed where the automatic matcher (tools/jmp_mapper.py) fails. Non-spatial strata (e.g. 'Other towns', 'Resto', 'more than 5,000 inhabitants') are left out on purpose.",
+ "COL": {
+  "Atlantica": [
+   "La Guajira",
+   "Cesar",
+   "Magdalena",
+   "Atlántico",
+   "Bolívar",
+   "Sucre",
+   "Córdoba",
+   "San Andrés y Providencia"
+  ],
+  "Bogota": [
+   "Bogota"
+  ],
+  "Central": [
+   "Antioquia",
+   "Caldas",
+   "Risaralda",
+   "Quindío",
+   "Tolima",
+   "Huila",
+   "Caquetá"
+  ],
+  "Oriental": [
+   "Norte de Santander",
+   "Santander",
+   "Boyacá",
+   "Cundinamarca",
+   "Meta"
+  ],
+  "Orinoquia/Amazonia": [
+   "Arauca",
+   "Casanare",
+   "Vichada",
+   "Guainía",
+   "Guaviare",
+   "Vaupés",
+   "Amazonas",
+   "Putumayo"
+  ],
+  "Pacifica": [
+   "Chocó",
+   "Valle del Cauca",
+   "Cauca",
+   "Nariño"
+  ]
+ },
+ "DOM": {
+  "Cibao Norte": [
+   "Santiago",
+   "Puerto Plata",
+   "Espaillat"
+  ],
+  "Cibao Sur": [
+   "La Vega",
+   "Monseñor Nouel",
+   "Sánchez Ramírez"
+  ],
+  "Cibao Nordeste": [
+   "Duarte",
+   "María Trinidad Sánchez",
+   "Samaná",
+   "Hermanas"
+  ],
+  "Cibao Noroeste": [
+   "Valverde",
+   "Monte Cristi",
+   "Dajabón",
+   "Santiago Rodríguez"
+  ],
+  "Valdesia": [
+   "San Cristóbal",
+   "Peravia",
+   "San José de Ocoa",
+   "Azua"
+  ],
+  "Enriquillo": [
+   "Barahona",
+   "Bahoruco",
+   "Independencia",
+   "Pedernales"
+  ],
+  "El Valle": [
+   "San Juan",
+   "La Estrelleta"
+  ],
+  "Del Yuma": [
+   "La Altagracia",
+   "La Romana",
+   "El Seybo"
+  ],
+  "Higuamo": [
+   "San Pedro de Macorís",
+   "Hato Mayor",
+   "Monte Plata"
+  ],
+  "Metropolitana": [
+   "Distrito Nacional",
+   "Santo Domingo"
+  ]
+ },
+ "GTM": {
+  "Metropolitana": [
+   "Guatemala"
+  ],
+  "Norte": [
+   "Alta Verapaz",
+   "Baja Verapaz"
+  ],
+  "Nororiente": [
+   "El Progreso",
+   "Izabal",
+   "Zacapa",
+   "Chiquimula"
+  ],
+  "Suroriente": [
+   "Santa Rosa",
+   "Jalapa",
+   "Jutiapa"
+  ],
+  "Central": [
+   "Sacatepéquez",
+   "Chimaltenango",
+   "Escuintla"
+  ],
+  "Suroccidente": [
+   "Sololá",
+   "Totonicapán",
+   "Quezaltenango",
+   "Suchitepéquez",
+   "Retalhuleu",
+   "San Marcos"
+  ],
+  "Noroccidente": [
+   "Huehuetenango",
+   "Quiché"
+  ],
+  "Petén": [
+   "Petén"
+  ]
+ },
+ "SLV": {
+  "Metropolitana": [
+   "San Salvador"
+  ],
+  "Occidente": [
+   "Ahuachapán",
+   "Santa Ana",
+   "Sonsonate"
+  ],
+  "Central": [
+   "La Libertad",
+   "Chalatenango"
+  ],
+  "Para Central": [
+   "Cuscatlán",
+   "La Paz",
+   "Cabañas",
+   "San Vicente"
+  ],
+  "Oriental": [
+   "Usulután",
+   "San Miguel",
+   "Morazán",
+   "La Unión"
+  ]
+ },
+ "NIC": {
+  "Pácifico": [
+   "Chinandega",
+   "León",
+   "Managua",
+   "Masaya",
+   "Granada",
+   "Carazo",
+   "Rivas"
+  ],
+  "Pacífico": [
+   "Chinandega",
+   "León",
+   "Managua",
+   "Masaya",
+   "Granada",
+   "Carazo",
+   "Rivas"
+  ],
+  "Central": [
+   "Nueva Segovia",
+   "Jinotega",
+   "Madriz",
+   "Estelí",
+   "Matagalpa",
+   "Boaco",
+   "Chontales",
+   "Rio San Juan"
+  ],
+  "Atlántico": [
+   "Atlántico Norte",
+   "Atlántico Sur"
+  ]
+ },
+ "TTO": {
+  "North West": [
+   "Port of Spain",
+   "San Juan-Laventille",
+   "Diego Martin"
+  ],
+  "North Central": [
+   "Arima",
+   "Tunapuna/Piarco"
+  ],
+  "Central": [
+   "Chaguanas",
+   "Couva-Tabaquite-Talparo"
+  ],
+  "South West": [
+   "San Fernando",
+   "Point Fortin",
+   "Siparia",
+   "Penal-Debe"
+  ],
+  "North East": [
+   "Sangre Grande"
+  ],
+  "South East": [
+   "Princes Town",
+   "Rio Claro-Mayaro"
+  ],
+  "Tobago": [
+   "Eastern Tobago",
+   "Western Tobago"
+  ],
+  "East": [
+   "Sangre Grande",
+   "Rio Claro-Mayaro"
+  ]
+ },
+ "JAM": {
+  "KMA": [
+   "Kingston",
+   "Saint Andrew"
+  ],
+  "Rural": [
+   "Clarendon",
+   "Hanover",
+   "Manchester",
+   "Portland",
+   "Saint Ann",
+   "Saint Catherine",
+   "Saint Elizabeth",
+   "Saint James",
+   "Saint Mary",
+   "Saint Thomas",
+   "Trelawny",
+   "Westmoreland"
+  ]
+ },
+ "BRB": {
+  "St. James, St. George, and St. Thomas": [
+   "Saint James",
+   "Saint George",
+   "Saint Thomas"
+  ],
+  "St. Lucy, St. Peter, St. Andrew, St. Joseph, and St. John": [
+   "Saint Lucy",
+   "Saint Peter",
+   "Saint Andrew",
+   "Saint Joseph",
+   "Saint John"
+  ]
+ },
+ "MEX": {
+  "DF-Edo México": [
+   "Distrito Federal",
+   "México"
+  ],
+  "Noroeste": [
+   "Baja California",
+   "Baja California Sur",
+   "Chihuahua",
+   "Durango",
+   "Sinaloa",
+   "Sonora"
+  ],
+  "Noreste": [
+   "Coahuila",
+   "Nuevo León",
+   "San Luis Potosí",
+   "Tamaulipas",
+   "Zacatecas"
+  ],
+  "Centro": [
+   "Aguascalientes",
+   "Colima",
+   "Guanajuato",
+   "Hidalgo",
+   "Jalisco",
+   "Michoacán",
+   "Morelos",
+   "Nayarit",
+   "Puebla",
+   "Querétaro",
+   "Tlaxcala"
+  ],
+  "Sur": [
+   "Campeche",
+   "Chiapas",
+   "Guerrero",
+   "Oaxaca",
+   "Quintana Roo",
+   "Tabasco",
+   "Veracruz",
+   "Yucatán"
+  ]
+ },
+ "CIV": {
+  "Centre": [
+   "Lacs",
+   "N'zi-Comoé"
+  ],
+  "Centre-Est": [
+   "Comoe"
+  ],
+  "Centre-Nord": [
+   "Vallée du Bandama"
+  ],
+  "Centre-Ouest": [
+   "Haut-Sassandra",
+   "Marahoué",
+   "Fromager"
+  ],
+  "Nord": [
+   "Savanes"
+  ],
+  "Nord-Est": [
+   "Zanzan"
+  ],
+  "Nord-Ouest": [
+   "Denguélé",
+   "Bafing",
+   "Worodougou"
+  ],
+  "Ouest": [
+   "Dix-Huit Montagnes",
+   "Cavally"
+  ],
+  "Sud sans Ville d'Abidjan": [
+   "Lagunes",
+   "Agnéby",
+   "Sud-Comoé",
+   "Sud-Bandama"
+  ],
+  "Sud-Ouest": [
+   "Bas-Sassandra"
+  ]
+ },
+ "NGA": {
+  "north central": [
+   "Benue",
+   "Kogi",
+   "Kwara",
+   "Nassarawa",
+   "Niger",
+   "Plateau",
+   "Federal Capital Territory"
+  ],
+  "north east": [
+   "Adamawa",
+   "Bauchi",
+   "Borno",
+   "Gombe",
+   "Taraba",
+   "Yobe"
+  ],
+  "north west": [
+   "Jigawa",
+   "Kaduna",
+   "Kano",
+   "Katsina",
+   "Kebbi",
+   "Sokoto",
+   "Zamfara"
+  ],
+  "south east": [
+   "Abia",
+   "Anambra",
+   "Ebonyi",
+   "Enugu",
+   "Imo"
+  ],
+  "south south": [
+   "Akwa Ibom",
+   "Bayelsa",
+   "Cross River",
+   "Delta",
+   "Edo",
+   "Rivers"
+  ],
+  "south west": [
+   "Ekiti",
+   "Lagos",
+   "Ogun",
+   "Ondo",
+   "Osun",
+   "Oyo"
+  ]
+ },
+ "DZA": {
+  "NORD CENTRE": [
+   "Alger",
+   "Blida",
+   "Boumerdès",
+   "Tipaza",
+   "Bouira",
+   "Médéa",
+   "Tizi Ouzou",
+   "Béjaïa",
+   "Chlef",
+   "Aïn Defla"
+  ],
+  "NORD EST": [
+   "Annaba",
+   "Constantine",
+   "Skikda",
+   "Jijel",
+   "Mila",
+   "Souk Ahras",
+   "El Tarf",
+   "Guelma"
+  ],
+  "NORD OUEST": [
+   "Oran",
+   "Tlemcen",
+   "Mostaganem",
+   "Aïn Témouchent",
+   "Relizane",
+   "Sidi Bel Abbès",
+   "Mascara"
+  ],
+  "HAUT PLATEAU CENTRE": [
+   "Djelfa",
+   "Laghouat",
+   "M'Sila"
+  ],
+  "HAUT PLATEAU EST": [
+   "Sétif",
+   "Batna",
+   "Khenchela",
+   "Bordj Bou Arréridj",
+   "Oum el Bouaghi",
+   "Tébessa"
+  ],
+  "HAUT PLATEAU OUEST": [
+   "Tiaret",
+   "Tissemsilt",
+   "Saïda",
+   "Naâma",
+   "El Bayadh"
+  ],
+  "SUD": [
+   "Adrar",
+   "Béchar",
+   "Biskra",
+   "El Oued",
+   "Ghardaïa",
+   "Illizi",
+   "Ouargla",
+   "Tamanghasset",
+   "Tindouf"
+  ]
+ },
+ "TUN": {
+  "NORD EST": [
+   "Nabeul",
+   "Zaghouan",
+   "Bizerte"
+  ],
+  "NORD OUEST": [
+   "Béja",
+   "Jendouba",
+   "Le Kef",
+   "Siliana"
+  ],
+  "CENTRE EST": [
+   "Sousse",
+   "Monastir",
+   "Mahdia",
+   "Sfax"
+  ],
+  "CENTRE OUEST": [
+   "Kairouan",
+   "Kassérine",
+   "Sidi Bou Zid"
+  ],
+  "SUD EST": [
+   "Gabès",
+   "Médenine",
+   "Tataouine"
+  ],
+  "SUD OUEST": [
+   "Gafsa",
+   "Tozeur",
+   "Kebili"
+  ]
+ },
+ "EGY": {
+  "Urban governorates": [
+   "Al Qahirah",
+   "Al Iskandariyah",
+   "Bur Sa`id",
+   "As Suways"
+  ],
+  "Frontier governorates": [
+   "Al Bahr al Ahmar",
+   "Al Wadi at Jadid",
+   "Matruh",
+   "Janub Sina'",
+   "Shamal Sina'"
+  ],
+  "..LE Rural": [
+   "Ad Daqahliyah",
+   "Al Buhayrah",
+   "Al Gharbiyah",
+   "Al Minufiyah",
+   "Al Qalyubiyah",
+   "Ash Sharqiyah",
+   "Kafr ash Shaykh",
+   "Dumyat",
+   "Al Isma`iliyah"
+  ],
+  "..UE Rural": [
+   "Al Fayyum",
+   "Al Jizah",
+   "Al Minya",
+   "Asyut",
+   "Bani Suwayf",
+   "Qina",
+   "Suhaj",
+   "Aswan",
+   "Luxor"
+  ]
+ },
+ "LBR": {
+  "North Western": [
+   "Bomi",
+   "Grand Cape Mount",
+   "Gbapolu"
+  ],
+  "South Central": [
+   "Montserrado",
+   "Margibi",
+   "Grand Bassa"
+  ],
+  "South Eastern A": [
+   "River Cess",
+   "Sinoe",
+   "Grand Gedeh"
+  ],
+  "South Eastern B": [
+   "River Gee",
+   "Grand Kru",
+   "Maryland"
+  ],
+  "North Central": [
+   "Bong",
+   "Nimba",
+   "Lofa"
+  ]
+ },
+ "GMB": {
+  "Basse": [
+   "Upper River"
+  ],
+  "Brikama": [
+   "West Coast"
+  ],
+  "Janjanbureh": [
+   "Central River"
+  ],
+  "Kanifing": [
+   "Banjul"
+  ],
+  "Kerewan": [
+   "North Bank"
+  ],
+  "Kuntaur": [
+   "Central River"
+  ],
+  "Mansakonko": [
+   "Lower River"
+  ]
+ },
+ "SOM": {
+  "Banadir": [
+   "Banaadir"
+  ],
+  "Galgaduug": [
+   "Galguduud"
+  ],
+  "Hiran": [
+   "Hiiraan"
+  ],
+  "Nugal": [
+   "Nugaal"
+  ]
+ },
+ "PAK": {
+  "Balochistan": [
+   "Baluchistan"
+  ],
+  "FATA": [
+   "F.A.T.A."
+  ],
+  "ICT": [
+   "F.C.T."
+  ],
+  "KPK": [
+   "K.P."
+  ],
+  "Sindh": [
+   "Sind"
+  ]
+ },
+ "IDN": {
+  "Central Java": [
+   "Jawa Tengah"
+  ],
+  "Central Kalimantan": [
+   "Kalimantan Tengah"
+  ],
+  "Central Sulawesi": [
+   "Sulawesi Tengah"
+  ],
+  "East Java": [
+   "Jawa Timur"
+  ],
+  "East Kalimantan": [
+   "Kalimantan Timur"
+  ],
+  "East Nusa Tenggara": [
+   "Nusa Tenggara Timur"
+  ],
+  "Jakarta": [
+   "Jakarta Raya"
+  ],
+  "North Kalimantan": [
+   "Kalimantan Timur"
+  ],
+  "North Sulawesi": [
+   "Sulawesi Utara"
+  ],
+  "North Sumatera": [
+   "Sumatera Utara"
+  ],
+  "South Kalimantan": [
+   "Kalimantan Selatan"
+  ],
+  "South Sulawesi": [
+   "Sulawesi Selatan"
+  ],
+  "South Sumatera": [
+   "Sumatera Selatan"
+  ],
+  "Southeast Sulawesi": [
+   "Sulawesi Tenggara"
+  ],
+  "West Java": [
+   "Jawa Barat"
+  ],
+  "West Kalimantan": [
+   "Kalimantan Barat"
+  ],
+  "West Nusa Tenggara": [
+   "Nusa Tenggara Barat"
+  ],
+  "West Sulawesi": [
+   "Sulawesi Barat"
+  ],
+  "West Sumatera": [
+   "Sumatera Barat"
+  ]
+ },
+ "HTI": {
+  "Rest-Ouest": [
+   "Ouest"
+  ]
+ },
+ "VNM": {
+  "Central Highlands": [
+   "Lâm Đồng",
+   "Đắk Lắk",
+   "Đắk Nông"
+  ],
+  "Mekong River Delta": [
+   "An Giang",
+   "Bạc Liêu",
+   "Bến Tre",
+   "Cà Mau",
+   "Kiên Giang",
+   "Long An",
+   "Sóc Trăng",
+   "Tiền Giang",
+   "Trà Vinh",
+   "Vĩnh Long",
+   "Ðong Tháp"
+  ],
+  "North Central and Central Coastal area": [
+   "Bình Định",
+   "Gia Lai",
+   "Ha Tinh",
+   "Khánh Hòa",
+   "Kon Tum",
+   "Nghệ An",
+   "Phú Yên",
+   "Quảng Bình",
+   "Quảng Ngãi",
+   "Quảng Trị",
+   "Thanh Hóa",
+   "Thừa Thiên - Huế",
+   "Đà Nẵng"
+  ],
+  "Northern Midlands and Mountain area": [
+   "Bắc Giang",
+   "Cao Bằng",
+   "Ha Noi",
+   "Hà Giang",
+   "Hòa Bình",
+   "Lai Chau",
+   "Lào Cai",
+   "Lạng Sơn",
+   "Phú Thọ",
+   "Quảng Ninh",
+   "Son La",
+   "Thái Nguyên",
+   "Tuyên Quang",
+   "Yên Bái",
+   "Điện Biên"
+  ]
+ },
+ "SEN": {
+  "thi?s": [
+   "Thiès"
+  ]
+ },
+ "THA": {
+  "Bangkok": [
+   "Bangkok Metropolis"
+  ]
+ }
 }

@@ -6,6 +6,8 @@ Region → admin-1 mapping: manual entries in tools/jmp_region_map.json win; oth
 automatically against data/admin1.geojson names (accent-insensitive exact / containment / fuzzy).
 Unmatched regions are written to tools/jmp_unmapped.json for manual completion."""
 import sys, json, os, re, unicodedata, difflib, openpyxl
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from jmp_mapper import map_region
 here = os.path.dirname(os.path.abspath(__file__))
 root = os.path.join(here, '..')
 out_path = os.path.join(root, 'data', 'jmp-subnational.json')
@@ -80,7 +82,7 @@ for f in sys.argv[1:]:
     y = max(years); d = by_year[y]
     regs = {}
     for nm, vals in d['regions'].items():
-        a1 = rmap.get(iso, {}).get(nm) or auto_map(iso, nm)
+        a1 = map_region(iso, nm)
         if not a1: unmapped.setdefault(iso, []).append(nm)
         regs[nm] = {**vals, 'admin1': a1}
     out[iso] = {'year': y, 'source': os.path.basename(f), 'rural_q1': d['rural_q1'], 'rural_mean_q': d['rural'], 'total_mean_q': d['total'], 'regions': regs}

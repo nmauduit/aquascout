@@ -1,40 +1,17 @@
 {
  "AFG": [
-  "Daykundi",
-  "Helmand",
-  "Herat",
   "Panjsher"
  ],
  "AZE": [
-  "Aran",
-  "Ganja Gazakh",
-  "Shaki Zaqatala"
+  "Yukhari Karabakh"
  ],
  "BDI": [
   "Rumonge"
  ],
  "BEN": [
-  "atacora",
-  "atlantic",
-  "couffo"
- ],
- "BFA": [
-  "Boucle Du Mouhoun",
-  "Cascades",
-  "Centre",
-  "Centre Est",
-  "Centre Nord",
-  "Centre Ouest",
-  "Centre Sud",
-  "Est",
-  "Hauts-Bassins",
-  "Nord",
-  "Plateau Central",
-  "Sahel",
-  "Sud Ouest"
+  "atlantic"
  ],
  "BGD": [
-  "Chattogram",
   "Mymenshing"
  ],
  "BIH": [
@@ -42,12 +19,8 @@
   "FBiH",
   "RS"
  ],
- "BRB": [
-  "St. James, St. George, and St. Thomas",
-  "St. Lucy, St. Peter, St. Andrew, St. Joseph, and St. John"
- ],
- "BTN": [
-  "Lhuntse"
+ "BLR": [
+  "Minsk city"
  ],
  "CAF": [
   "Région 1",
@@ -59,16 +32,6 @@
   "Région 7"
  ],
  "CIV": [
-  "Centre",
-  "Centre-Est",
-  "Centre-Nord",
-  "Centre-Ouest",
-  "Nord",
-  "Nord-Est",
-  "Nord-Ouest",
-  "Ouest",
-  "Sud sans Ville d'Abidjan",
-  "Sud-Ouest",
   "Ville d'Abidjan"
  ],
  "CMR": [
@@ -81,7 +44,6 @@
   "Haut Uele",
   "Ituri",
   "Kasai",
-  "Kasai Central",
   "Kwango",
   "Kwilu",
   "Lomami",
@@ -95,37 +57,9 @@
   "Tshopo",
   "Tshuapa"
  ],
- "COM": [
-  "Ndzouani"
- ],
- "DOM": [
-  "Cibao Nordeste",
-  "Cibao Noroeste",
-  "Cibao Norte",
-  "Cibao Sur",
-  "Del Yuma",
-  "El Valle",
-  "Enriquillo",
-  "Higuamo",
-  "Metropolitana",
-  "Valdesia"
- ],
- "DZA": [
-  "HAUT PLATEAU CENTRE",
-  "HAUT PLATEAU EST",
-  "HAUT PLATEAU OUEST",
-  "NORD CENTRE",
-  "NORD EST",
-  "NORD OUEST",
-  "SUD"
- ],
  "EGY": [
-  "..LE Rural",
   "..LE Urban",
-  "..UE Rural",
-  "..UE Urban",
-  "Frontier governorates",
-  "Urban governorates"
+  "..UE Urban"
  ],
  "ETH": [
   "SNNPR"
@@ -133,91 +67,36 @@
  "GAB": [
   "Libreville-Port-Gentil"
  ],
- "GEO": [
-  "ADJARA A.R."
- ],
- "GMB": [
-  "Basse",
-  "Brikama",
-  "Janjanbureh",
-  "Kanifing",
-  "Kerewan",
-  "Kuntaur",
-  "Mansakonko"
- ],
  "GNB": [
   "SAB"
- ],
- "GTM": [
-  "Central",
-  "Metropolitana",
-  "Noroccidente",
-  "Nororiente",
-  "Norte",
-  "Suroccidente",
-  "Suroriente"
  ],
  "HTI": [
   "Aire Metropolitaine"
  ],
- "IDN": [
-  "33 Central Java",
-  "62 Central Kalimantan",
-  "72 Central Sulawesi",
-  "35 East Java",
-  "64 East Kalimantan",
-  "53 East Nusa Tenggara",
-  "31 Jakarta",
-  "65 North Kalimantan",
-  "71 North Sulawesi",
-  "12 North Sumatera",
-  "63 South Kalimantan",
-  "73 South Sulawesi",
-  "16 South Sumatera",
-  "74 Southeast Sulawesi",
-  "32 West Java",
-  "61 West Kalimantan",
-  "52 West Nusa Tenggara",
-  "76 West Sulawesi",
-  "13 West Sumatera"
- ],
  "IRQ": [
-  "DUHOK",
   "MISAN",
   "MUTHANA",
   "QADISYAH",
-  "SALAHADDIN",
-  "SULAIMANIYA",
   "THIQAR"
  ],
  "JAM": [
-  "KMA",
-  "Other towns",
-  "Rural"
- ],
- "JOR": [
-  "aljoun",
-  "jerash"
- ],
- "KAZ": [
-  "Akmola",
-  "Aktobe",
-  "Kostanai"
+  "Other towns"
  ],
  "KGZ": [
-  "Chui"
+  "Chui",
+  "Osh c"
+ ],
+ "KIR": [
+  "CENTRAL GILBERT",
+  "LINE AND PHOENIX GROUP",
+  "NORTHERN GILBERT",
+  "SOUTH TARAWA",
+  "SOUTHERN GILBERT"
  ],
  "LAO": [
   "BORIKHAMXAY",
   "VIENTIANE CAPITAL",
   "XAYSOMBOUNE"
- ],
- "LBR": [
-  "North Central",
-  "North Western",
-  "South Central",
-  "South Eastern A",
-  "South Eastern B"
  ],
  "LSO": [
   "Foothills",
@@ -230,26 +109,6 @@
   "North",
   "South"
  ],
- "MDV": [
-  "4 Central Region",
-  "3 North Central",
-  "2 North Region",
-  "5 South Central",
-  "6 South Region"
- ],
- "MEX": [
-  "DF-Edo México",
-  "Sur"
- ],
- "MKD": [
-  "EAST",
-  "PELAGONIJA",
-  "SOUTHEAST",
-  "SOUTHWEST"
- ],
- "MLI": [
-  "toumbouctou"
- ],
  "MMR": [
   "naypyitaw"
  ],
@@ -260,7 +119,7 @@
  ],
  "MNG": [
   "Central",
-  "Khangai",
+  "Eastern",
   "Western"
  ],
  "MOZ": [
@@ -269,24 +128,6 @@
  "MRT": [
   "Hodh charghy"
  ],
- "MWI": [
-  "Central",
-  "North",
-  "South"
- ],
- "NGA": [
-  "north central",
-  "north east",
-  "north west",
-  "south east",
-  "south south",
-  "south west"
- ],
- "NIC": [
-  "Atlántico",
-  "Central",
-  "Pácifico"
- ],
  "NPL": [
   "PROVINCE NO. 1",
   "PROVINCE NO. 2",
@@ -294,27 +135,8 @@
   "PROVINCE NO. 5",
   "SUDOORPASCHIM PROVINCE"
  ],
- "PAK": [
-  "4 Balochistan",
-  "8 FATA",
-  "6 ICT",
-  "3 KPK"
- ],
  "PHL": [
-  "Autonomous Region in Muslim Mindanao",
-  "Bicol",
-  "Calabarzon",
-  "Caraga",
-  "Central Luzon",
-  "Central Visayas",
-  "Cordillera",
-  "Eastern Visayas",
-  "Ilocos",
-  "Mimaropa",
-  "National Capital",
-  "Northern Mindanao",
-  "Soccsksargen",
-  "Western Visayas"
+  "Caraga"
  ],
  "PNG": [
   "highlands region",
@@ -342,28 +164,14 @@
   "Tulkarm"
  ],
  "SDN": [
-  "East Darfor",
-  "Sinnar",
-  "South Darfor",
-  "West Darfor",
+  "North Darfor",
   "West Kordofan"
  ],
- "SEN": [
-  "thi?s"
- ],
- "SLV": [
-  "Metropolitana",
-  "Central",
-  "Occidente",
-  "Oriental",
-  "Para Central"
+ "SLE": [
+  "north western"
  ],
  "SOM": [
   "1 Awdal",
-  "3 Banadir",
-  "6 Galgaduug",
-  "8 Hiran",
-  "12 Nugal",
   "13 Sanaag",
   "16 Sool",
   "17 Togdheer",
@@ -379,47 +187,22 @@
   "REGIÃO NORTE OESTE",
   "REGIÃO SUL ESTE"
  ],
- "TCD": [
-  "Ndjamena"
- ],
  "TGO": [
   "Golfe Urbain",
   "Lomé Commune",
   "Agglomération de Lomé"
  ],
- "THA": [
-  "Central",
-  "North",
-  "Northeast",
-  "South"
- ],
  "TJK": [
   "DRS",
-  "GBAO",
-  "Sughd"
+  "GBAO"
  ],
  "TKM": [
   "AKHAL VELAYAT",
   "ASHGABAT CITY",
-  "DASHOGUZ VELAYAT",
-  "LEBAP VELAYAT"
+  "MARY VELAYAT"
  ],
  "TON": [
   "ONGO NIUA"
- ],
- "TTO": [
-  "Central",
-  "North West",
-  "South West",
-  "Tobago"
- ],
- "TUN": [
-  "CENTRE EST",
-  "CENTRE OUEST",
-  "NORD EST",
-  "NORD OUEST",
-  "SUD EST",
-  "SUD OUEST"
  ],
  "TUR": [
   "Central",
@@ -433,6 +216,7 @@
  ],
  "UGA": [
   "acholi",
+  "ankole",
   "bugisu",
   "bukedi",
   "bunyoro",
@@ -443,7 +227,6 @@
   "north buganda",
   "south buganda",
   "teso",
-  "tooro",
   "west nile"
  ],
  "UKR": [
@@ -457,16 +240,11 @@
   "Más de 5 mil habitantes",
   "Rurales y menores de 5 mil habitantes"
  ],
- "VNM": [
-  "Central Highlands",
-  "Mekong River Delta",
-  "North Central and Central Coastal area",
-  "Northern Midlands and Mountain area"
- ],
  "YEM": [
   "Al-Hodiedah",
   "Aldhalae",
   "Reimah",
-  "Sanaa City"
+  "Sanaa City",
+  "Taiz"
  ]
 }
