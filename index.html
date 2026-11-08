@@ -437,7 +437,7 @@ function adLocalNeed(ctx,osm,dem){
   else if(set==='rural')add(1,'No registered water utility found for this point.');
   if(ctx.irca!=null&&!isNaN(ctx.irca)){const v=+ctx.irca;add(v>35?2:v>14?1:(v<=5&&set==='urban')?-1:0,`Municipal tap-water risk index IRCA ${fmt(v,1)}${set==='rural'?' (sampled on the urban network)':''} (${v<=5?'no risk':v<=14?'low':v<=35?'medium':v<=80?'high':'unfit'}).`);}
   if(ctx.micro&&ctx.micro.max>0)add(1,`Faecal contamination recorded nearby (${esc(ctx.micro.name)}).`);
-  if(ctx.wpdx&&ctx.wpdx.n){const f=ctx.wpdx.func;add(f<0.6?1:f>0.85?-1:0,`${fmt(f*100,0)}% of ${ctx.wpdx.n} mapped water points are functional (WPdx).`);}
+  if(ctx.wpdx&&ctx.wpdx.n){const f=ctx.wpdx.func;add(f<0.6?1:f>0.85?-1:0,`${fmt(f*100,0)}% of ${ctx.wpdx.n} mapped water points had water at the last visit (WPdx).`);}
   if(sub&&sub['Surface water']!=null&&sub['Surface water']>=5)add(1,`${fmt(sub['Surface water'],0)}% of the region still drinks surface water.`);
   if(ctx.grid&&ctx.grid.cls==='zni')add(1,'Non-interconnected zone: pumping and treatment depend on a few hours of diesel power a day.');
   const works=osm&&osm.cnt?(osm.cnt['Water works']||0):0;
@@ -452,7 +452,7 @@ function adLocalNeed(ctx,osm,dem){
   html(c,`<div style="font-size:15px"><span class="pill ${cls}">${level.toUpperCase()}</span> &nbsp;About <b>${fmt(est,0)}%</b> of people here are likely to lack even basic drinking water${estSM!=null?`, and about <b>${fmt(estSM,0)}%</b> lack safely managed water`:''}.</div>`);
   html(c,`<dl class="kv"><dt>Settlement</dt><dd><b>${set}</b> — ${esc(setWhy)}</dd>
     <dt>Regional baseline</dt><dd>${sub?`JMP region “${esc(sub.region)}” (${sub.year} survey): ${fmt(regGap,0)}% lack basic, all population`:`national: ${fmt(natTot,0)}% lack basic, all population`}</dd>
-    <dt>Method</dt><dd>latest national ${set} coverage ${fmt(covSet,0)}% (JMP ${esc(d&&d.basw_y||'')})${rel!=null?` × ${fmt(rel,2)} (${esc(relWhy)})`:''} = <b>${fmt(covHere,0)}%</b> with at least basic water</dd></dl>`);
+    <dt>Method</dt><dd>${covSet!=null?`latest national ${set} coverage ${fmt(covSet,0)}% (JMP ${esc(d&&d.basw_y||'')})${rel!=null?` × ${fmt(rel,2)} (${esc(relWhy)})`:''}`:`no ${set}/urban split published for this country — ${sub?'regional':'national'} figure used as is`} = <b>${fmt(covHere,0)}%</b> with at least basic water</dd></dl>`);
   if(ev.length)html(c,'<b>Local evidence</b><ul class="plain">'+ev.map(x=>`<li>${x.e>0?'▲':x.e<0?'▼':'•'} ${x.t}</li>`).join('')+`</ul><div class="hint">▲ raises the need level, ▼ lowers it. Net ${score>0?'+':''}${score}${score>=2?' → level raised one step':score<=-2?' → level lowered one step':''}.</div>`);
   html(c,'<div class="hint">Model estimate, not a measurement: regional WHO/UNICEF survey value × national rural/urban gap ratio, then adjusted by local evidence. Confirm with a household survey or the municipal water register before committing.</div>');
   src(c,'WHO/UNICEF JMP (national and subnational), OSM, utility registers, WPdx, INS IRCA','https://washdata.org/data');
@@ -862,7 +862,7 @@ async function adWPdx(lat,lon,r){
     const pts=rows.map(x=>({...x,la:+x.lat_deg,lo:+x.lon_deg,d:km([lat,lon],[+x.lat_deg,+x.lon_deg])})).sort((a,b)=>a.d-b.d);
     const cnt=(k,f)=>{const o={};for(const x of pts){const v=f?f(x):x[k];const kk=v||'unknown';o[kk]=(o[kk]||0)+1;}return Object.entries(o).sort((a,b)=>b[1]-a[1]);};
     const st=cnt('status_clean'),src_=cnt('water_source_clean'),tech=cnt('water_tech_clean'),mg=cnt('management_clean');
-    const func=pts.filter(x=>/^Functional/i.test(x.status_clean||'')).length,nonf=pts.filter(x=>/Non-Functional|Abandoned/i.test(x.status_clean||'')).length;
+    const okp=x=>String(x.status_id||'').toLowerCase()==='yes'||/^Functional/i.test(x.status_clean||'');const func=pts.filter(okp).length,nonf=pts.length-func;
     const fc=pts.filter(x=>x.fecal_coliform_presence),fcPos=fc.filter(x=>/true|yes|present|positive/i.test(x.fecal_coliform_presence)).length;
     const served=pts.reduce((a,x)=>a+(+x.served_population||0),0);
     for(const x of pts.slice(0,400)){const ok=/^Functional/i.test(x.status_clean||'');L.circleMarker([x.la,x.lo],{radius:4,color:ok?'#1f7a4d':/Non|Aband/i.test(x.status_clean||'')?'#b3261e':'#b26a00',fillOpacity:.8,weight:1}).bindPopup(`<b>${esc(x.water_source_clean||'water point')}</b> · ${esc(x.water_tech_clean||'')}<br>${esc(x.status_clean||'status ?')}${x.install_year?' · installed '+x.install_year:''}<br>${esc(x.management_clean||'')}${x.pay_clean?' · pay: '+esc(x.pay_clean):''}${x.fecal_coliform_presence?'<br>fecal coliform: '+esc(x.fecal_coliform_presence):''}${x.served_population?'<br>serves ~'+fmt(x.served_population,0):''}<br>${fmt(x.d,1)} km · reported ${esc(String(x.report_date||'').slice(0,10))}`).addTo(layerGroup);}
