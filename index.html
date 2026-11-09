@@ -264,7 +264,7 @@ let marker,circle,layerGroup=L.layerGroup().addTo(map);
 const colors={sea:'#2c5e8a',brackish:'#4f8a8b',fresh:'#2f8f5b',waste:'#7a5a3a'};
 function dot(lat,lon,kind,label){L.circleMarker([lat,lon],{radius:6,color:colors[kind],fillColor:colors[kind],fillOpacity:.8,weight:1}).bindPopup(label).addTo(layerGroup);}
 let pick=null;
-map.on('click',e=>{const {lat,lng}=e.latlng;if(pick)map.removeLayer(pick);
+map.on('click',e=>{const {lat,lng}=e.latlng;if(pick)map.removeLayer(pick);if(marker){map.removeLayer(marker);marker=null;}if(circle){map.removeLayer(circle);circle=null;}
   const r=Math.min(50,Math.max(1,+$('#radius').value||10));
   pick=L.layerGroup([L.circle([lat,lng],{radius:r*1000,color:'#0f6f86',weight:1,dashArray:'4 4',fillOpacity:.03}),L.marker([lat,lng],{opacity:.75}).bindTooltip('Selected point — press Scan',{permanent:false})]).addTo(map);
   $('#q').value=`${lat.toFixed(5)}, ${lng.toFixed(5)}`;$('#go').classList.add('pulse');});
@@ -1501,7 +1501,7 @@ async function scan(lat,lon){
     const nat=await natP;Object.assign(ctx,nat);
     ctx.comp=(await loadComp())[a3]||null;
     ctx.crisis=(await loadCrises()).map(x=>({...x,d:km([lat,lon],[x.lat,x.lon])})).filter(x=>x.d<=x.radius_km).sort((a,b)=>(a.severity==='severe'?0:1)-(b.severity==='severe'?0:1)||a.d-b.d)[0]||null;
-    {const isl=await islP;if(isl&&isl.area<50){const inside=(ctx.ds?.all||[]).filter(p=>isl.rings.some(rg=>pipRing(p.lo,p.la,rg)));if(!inside.length&&!ctx.utility)ctx.smallCay={name:isl.name,area:isl.area};}}
+    {const isl=await Promise.race([islP,new Promise(r=>setTimeout(()=>r(null),8000)),stopCtl.p.catch(()=>null)]);if(isl&&isl.area<50){const inside=(ctx.ds?.all||[]).filter(p=>isl.rings.some(rg=>pipRing(p.lo,p.la,rg)));if(!inside.length&&!ctx.utility)ctx.smallCay={name:isl.name,area:isl.area};}}
     ctx.grid=await Promise.race([gridP,new Promise(r=>setTimeout(()=>r(null),40000)),stopCtl.p.catch(()=>null)]);
     if(stopCtl.stopped)throw new Error('stopped');
     ctx.localNeed=adLocalNeed(ctx,osm,dem);
