@@ -744,13 +744,16 @@ const PLANT_MAX_M3D=5000,LPCD=100,LOSS=1.15,CAP_PEOPLE=Math.floor(PLANT_MAX_M3D*
 function targetDemand(ctx,dem,wp){
   const many=dem.popCity||(wp&&wp.pop>CAP_PEOPLE)||(dem.pop>CAP_PEOPLE);
   if(!many||dem.popSrc==='entered')return null;
-  const base=wp&&wp.pop>=20?wp.pop:dem.pop;const n=ctx.localNeed;if(!n||n.cay||n.est==null)return null;
+  // in a city a plant can serve any district within the radius, so the radius population is the base
+  const useR=!!(dem.popCity&&wp&&wp.radiusPop>=20);const base=useR?wp.radiusPop:wp&&wp.pop>=20?wp.pop:dem.pop;const n=ctx.localNeed;if(!n||n.cay||n.est==null)return null;
   const acc=Math.max(0,n.est),cont=n.av!=null?Math.max(0,100-n.av):null;
-  const lo=Math.max(acc,cont??acc),hi=Math.min(100,acc+(cont??0));
-  const peopleLo=Math.round(base*lo/100),peopleHi=Math.round(base*hi/100),mid=Math.round((peopleLo+peopleHi)/2);
+  // a documented city deficit (water delivered vs demand) replaces the national average as the upper bound
+  const def=n.crisis&&n.crisis.deficit_pct?n.crisis.deficit_pct:null;
+  const lo=Math.max(acc,cont??acc),hi=def?Math.max(def,lo):Math.min(100,acc+(cont??0));
+  const peopleLo=Math.round(base*lo/100),peopleHi=Math.round(base*hi/100),mid=def?peopleHi:Math.round((peopleLo+peopleHi)/2);
   if(mid<50)return null;
   const target=Math.min(mid,CAP_PEOPLE),plants=Math.max(1,Math.ceil(peopleHi/CAP_PEOPLE));
-  return {base,baseSrc:wp&&wp.pop>=20?'WorldPop 2020, 2 km':'community',lo,hi,peopleLo,peopleHi,target,plants,capped:mid>CAP_PEOPLE,crisis:!!(n.crisis&&n.crisis.type.includes('shortage'))};
+  return {def,defNote:n.crisis?n.crisis.deficit_note:null,base,baseSrc:useR?`WorldPop 2020, ${wp.r} km radius`:wp&&wp.pop>=20?'WorldPop 2020, 2 km':'community',lo,hi,peopleLo,peopleHi,target,plants,capped:mid>CAP_PEOPLE,crisis:!!(n.crisis&&n.crisis.type.includes('shortage'))};
 }
 function adDemand(places,wp0){
   const wp=wp0&&wp0.pop>=20?wp0:null; // a handful of modelled residents is noise, not a community
@@ -1567,7 +1570,7 @@ async function scan(lat,lon){
     ctx.localNeed=adLocalNeed(ctx,osm,dem);
     {const t=targetDemand(ctx,dem,wp);if(t){ctx.target=t;ctx.pop=t.target;ctx.Q=t.target*LPCD*LOSS/1000;ctx.assumed=false;ctx.popSrc='people without reliable water (est.)';
       const c=cards.demand;if(c){setStatus(c,`${fmt(t.target,0)} people without reliable water (est.)`,'ok');
-        html(c,`<div class="note"><b>Sizing basis: people without reliable water.</b> ~${fmt(t.base,0)} residents (${esc(t.baseSrc)}) × ${fmt(t.lo,0)}–${fmt(t.hi,0)}% lacking basic or reliable water = <b>~${fmt(t.peopleLo,0)}–${fmt(t.peopleHi,0)} people</b>${t.crisis?' (a documented shortage means the real figure is likely higher)':''}. The plant is sized for <b>${fmt(t.target,0)}</b> people (${fmt(ctx.Q,0)} m³/d)${t.capped?` — capped at one plant's maximum of ${fmt(PLANT_MAX_M3D,0)} m³/d`:''}.${t.plants>1?` Covering the upper estimate would take about <b>${t.plants} plants</b>.`:''}<div class="hint">Plant ceiling ${fmt(PLANT_MAX_M3D,0)} m³/d is the seawater figure of the planned system; ceilings for brackish and river water are not set yet, so the same value is used. Shares are the local access gap plus the national continuity gap for this settlement type (JMP); the range runs from overlap (low) to no overlap (high). Enter a population above to size for a specific customer instead.</div></div>`);}}}
+        html(c,`<div class="note"><b>Sizing basis: people without reliable water.</b> ~${fmt(t.base,0)} residents (${esc(t.baseSrc)}) × ${fmt(t.lo,0)}–${fmt(t.hi,0)}% lacking basic or reliable water = <b>~${fmt(t.peopleLo,0)}–${fmt(t.peopleHi,0)} people</b>${t.def?` (upper bound from the documented deficit: ${esc(t.defNote||t.def+'% of demand unmet')})`:t.crisis?' (a documented shortage means the real figure is likely higher)':''}. The plant is sized for <b>${fmt(t.target,0)}</b> people (${fmt(ctx.Q,0)} m³/d)${t.capped?` — capped at one plant's maximum of ${fmt(PLANT_MAX_M3D,0)} m³/d`:''}.${t.plants>1?` Covering the upper estimate would take about <b>${t.plants} plants</b>.`:''}<div class="hint">Plant ceiling ${fmt(PLANT_MAX_M3D,0)} m³/d is the seawater figure of the planned system; ceilings for brackish and river water are not set yet, so the same value is used. Shares are the local access gap plus the national continuity gap for this settlement type (JMP); the range runs from overlap (low) to no overlap (high), or to the documented city deficit where one is on record. Enter a population above to size for a specific customer instead.</div></div>`);}}}
     if(!ctx.grid)gridP.then(async g=>{ctx.grid=g;gridStrategy(ctx);if(cards.localneed){cards.localneed.el.remove();delete cards.localneed;}ctx.localNeed=adLocalNeed(ctx,osm,dem);if(cards.econ){cards.econ.el.remove();delete cards.econ;}await adEconomics(ctx);renderBrief(ctx);});
     if(nat.wellsAdd)ctx.wells+=nat.wellsAdd;
     ctx.wwtp=coverage.some(x=>/Wastewater treatment \((OSM|EPA|ANA)\)/.test(x.topic)&&x.state==='ok')||!!(hw&&hw.n);ctx.hw=hw;
