@@ -5,6 +5,7 @@ Live: https://nmauduit.github.io/aquascout/ · Repo: github.com/nmauduit/aquasco
 **Rule agreed:** the tool shows **publicly available data only** — no site knowledge typed in by the user; unknowns are shown as unknown (grey).
 
 ## A. Your actions
+- [ ] Confirm the plant's maximum output for brackish water and for river/fresh water (seawater = 5,000 m³/d).
 - [ ] Test location #2 and send screenshots of anything wrong, surprising or missing (location #1 Exuma / Torch Cay done).
 
 ## B. Next build items (suggested order)
@@ -25,7 +26,7 @@ Live: https://nmauduit.github.io/aquascout/ · Repo: github.com/nmauduit/aquasco
 - Pre-bake CORS-blocked rasters (GEBCO); batch-screening RPC.
 
 ## Done 2026-11-08
-- [x] **Target demand in cities / large populations** — residents × share without basic or reliable water (range), capped at one plant (**5,000 m³/d max**, source-dependent), with the number of plants to cover the upper estimate. Villages and towns below the cap are still sized on the whole community.
+- [x] **Target demand in cities / large populations** — residents × share without basic or reliable water (range), capped at one plant (**5,000 m³/d = seawater maximum**; brackish/river ceilings to be confirmed — same value used meanwhile), with the number of plants to cover the upper estimate. Villages and towns below the cap are still sized on the whole community.
 - [x] **River check** — 3 years of daily flow (dry-season low), seasonal / small-stream / urban-sewage / tidal flags; doubtful rivers never become the "best feed"; large rivers 25–100 km away sampled as regional-transfer options.
 - [x] **People count from WorldPop 2020** — residents within 2 km and within the radius; used when OSM has no usable figure; inside a city demand assumes a 2,000-person community.
 - [x] **Feed tile** flags assumed river salinity ("fresh?", grey).

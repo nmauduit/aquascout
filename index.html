@@ -738,7 +738,7 @@ async function adWorldPop(lat,lon,r){
     const j=await res.json();const st=j.statistics&&j.statistics[0];return st?Math.round(st.mean*st.count):null;};
   try{const [near,all]=await Promise.all([one(2),one(r)]);return near==null?null:{pop:near,R:2,radiusPop:all,r};}catch(e){return null;}
 }
-// Plant ceiling: the system Nicolas plans delivers up to 5,000 m³/day (source-dependent)
+// Plant ceiling: 5,000 m³/day is the seawater maximum of the planned system; brackish/river ceilings not set yet, so the same cap is used
 const PLANT_MAX_M3D=5000,LPCD=100,LOSS=1.15,CAP_PEOPLE=Math.floor(PLANT_MAX_M3D*1000/(LPCD*LOSS));
 // In cities (or when residents exceed one plant) size on the people without reliable water, capped at one plant
 function targetDemand(ctx,dem,wp){
@@ -1567,7 +1567,7 @@ async function scan(lat,lon){
     ctx.localNeed=adLocalNeed(ctx,osm,dem);
     {const t=targetDemand(ctx,dem,wp);if(t){ctx.target=t;ctx.pop=t.target;ctx.Q=t.target*LPCD*LOSS/1000;ctx.assumed=false;ctx.popSrc='people without reliable water (est.)';
       const c=cards.demand;if(c){setStatus(c,`${fmt(t.target,0)} people without reliable water (est.)`,'ok');
-        html(c,`<div class="note"><b>Sizing basis: people without reliable water.</b> ~${fmt(t.base,0)} residents (${esc(t.baseSrc)}) × ${fmt(t.lo,0)}–${fmt(t.hi,0)}% lacking basic or reliable water = <b>~${fmt(t.peopleLo,0)}–${fmt(t.peopleHi,0)} people</b>${t.crisis?' (a documented shortage means the real figure is likely higher)':''}. The plant is sized for <b>${fmt(t.target,0)}</b> people (${fmt(ctx.Q,0)} m³/d)${t.capped?` — capped at one plant's maximum of ${fmt(PLANT_MAX_M3D,0)} m³/d`:''}.${t.plants>1?` Covering the upper estimate would take about <b>${t.plants} plants</b>.`:''}<div class="hint">Shares are the local access gap plus the national continuity gap for this settlement type (JMP); the range runs from overlap (low) to no overlap (high). Enter a population above to size for a specific customer instead.</div></div>`);}}}
+        html(c,`<div class="note"><b>Sizing basis: people without reliable water.</b> ~${fmt(t.base,0)} residents (${esc(t.baseSrc)}) × ${fmt(t.lo,0)}–${fmt(t.hi,0)}% lacking basic or reliable water = <b>~${fmt(t.peopleLo,0)}–${fmt(t.peopleHi,0)} people</b>${t.crisis?' (a documented shortage means the real figure is likely higher)':''}. The plant is sized for <b>${fmt(t.target,0)}</b> people (${fmt(ctx.Q,0)} m³/d)${t.capped?` — capped at one plant's maximum of ${fmt(PLANT_MAX_M3D,0)} m³/d`:''}.${t.plants>1?` Covering the upper estimate would take about <b>${t.plants} plants</b>.`:''}<div class="hint">Plant ceiling ${fmt(PLANT_MAX_M3D,0)} m³/d is the seawater figure of the planned system; ceilings for brackish and river water are not set yet, so the same value is used. Shares are the local access gap plus the national continuity gap for this settlement type (JMP); the range runs from overlap (low) to no overlap (high). Enter a population above to size for a specific customer instead.</div></div>`);}}}
     if(!ctx.grid)gridP.then(async g=>{ctx.grid=g;gridStrategy(ctx);if(cards.localneed){cards.localneed.el.remove();delete cards.localneed;}ctx.localNeed=adLocalNeed(ctx,osm,dem);if(cards.econ){cards.econ.el.remove();delete cards.econ;}await adEconomics(ctx);renderBrief(ctx);});
     if(nat.wellsAdd)ctx.wells+=nat.wellsAdd;
     ctx.wwtp=coverage.some(x=>/Wastewater treatment \((OSM|EPA|ANA)\)/.test(x.topic)&&x.state==='ok')||!!(hw&&hw.n);ctx.hw=hw;
