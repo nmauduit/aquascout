@@ -1310,7 +1310,7 @@ function econCompute(p){
   // Solar off-grid: PV + battery + genset backup (backup share by sun)
   const backup=p.backupShare;const capS=p.pv*p.pvCost+p.batt*p.battCost+p.gen*p.genCost;
   const annS=capS*p.om+Eyr*backup*fuelKwh;
-  out.solar={name:'Solar off-grid (PV + battery + genset)',capex:capS,annual:annS,npv:npv(capS,annS,p.batt*p.battCost)};
+  out.solar={name:p.backupShare>=0.25?`Solar hybrid ${Math.round((1-p.backupShare)*100)}% (PV + battery + genset)`:'Solar off-grid (PV + battery + genset)',capex:capS,annual:annS,npv:npv(capS,annS,p.batt*p.battCost)};
   // Grid: connection + energy; if unreliable keep a genset and burn fuel for outage share
   const outage=p.rel==='poor'?0.25:p.rel==='unreliable'?0.10:0.02;
   const capG=p.lineKm*p.lineCost+p.conn+(p.rel&&p.rel!=='fair'?p.gen*p.genCost:0);
@@ -1331,7 +1331,7 @@ async function adEconomics(ctx){
   const tf=await tariffFor(ctx);const gd=ctx.grid||{};
   const island=/^(BS|KN|AG|LC|VC|GD|DM|BB|TT|KY|TC|VG|VI|AW|CW|BQ|SX|MF|BL|GP|MQ|HT|JM|DO|CU|PR|BM|MV|FJ|KI|TV|MH|TO|WS|VU|SB|PF|NC|CV|MU|SC|KM|ST|TL|CY|MT|LK|PH|ID|MG|PG|FM|NR|PW|CK|NU|GU|MP|AS|RE|YT|IS|GL|FO)$/.test(ctx.loc?.cc||'');
   const T0=await loadTariffs();const dd=T0.diesel_defaults||{};let dsl=(T0.diesel_usd_l&&T0.diesel_usd_l[ctx.loc?.cc])||(island?(dd.island_no_data||1.5):(dd.mainland_no_data||1.0));const dslSrc=T0.diesel_usd_l&&T0.diesel_usd_l[ctx.loc?.cc]?'GlobalPetrolPrices, pump price':'assumed — no price page for this territory';const remote=island&&ctx.remoteKm!=null&&ctx.remoteKm>30;if(remote)dsl=+(dsl*(dd.outer_island_uplift||1.3)).toFixed(2);
-  const defaults={E:best.E,Q:ctx.Q,pv:best.pv,batt:best.batt,gen:best.gen,tariff:tf.v,pvCost:island?1300:1000,battCost:350,genCost:250,diesel:dsl,lineKm:gd.cls==='near'?Math.max(0.3,gd.dLine||0.5):gd.cls==='mid'?gd.dLine:gd.cls==='unmapped'?2:gd.cls==='zni'?0.5:(gd.dLine||15),lineCost:30000,conn:15000,disc:0.08,life:20,om:0.02,rel:gd.rel||null,cls:gd.cls||'none',backupShare:ctx.solar?.worst>=4.5?0.05:ctx.solar?.worst>=3.5?0.10:0.20};
+  const defaults={E:best.E,Q:ctx.Q,pv:best.pv,batt:best.batt,gen:best.gen,tariff:tf.v,pvCost:island?1300:1000,battCost:350,genCost:250,diesel:dsl,lineKm:gd.cls==='near'?Math.max(0.3,gd.dLine||0.5):gd.cls==='mid'?gd.dLine:gd.cls==='unmapped'?2:gd.cls==='zni'?0.5:(gd.dLine||15),lineCost:30000,conn:15000,disc:0.08,life:20,om:0.02,rel:gd.rel||null,cls:gd.cls||'none',backupShare:ctx.hyb?.h70?1-ctx.hyb.h70.share:(ctx.solar?.worst>=4.5?0.05:ctx.solar?.worst>=3.5?0.10:0.20)};
   const ids=['tariff','pvCost','battCost','genCost','diesel','lineKm','lineCost','conn','disc','life','om'];
   const labels={tariff:'Grid tariff $/kWh',pvCost:'PV installed $/kWp',battCost:'Battery $/kWh',genCost:'Genset $/kVA',diesel:'Diesel $/L',lineKm:'Line extension km',lineCost:'Line cost $/km',conn:'Connection/transformer $',disc:'Discount rate',life:'Life years',om:'O&M %/yr of capex'};
   const wrap=document.createElement('div');wrap.className='econ';
@@ -1358,6 +1358,16 @@ async function adEconomics(ctx){
 }
 function gridStrategy(ctx,c){
   const gd=ctx.grid;if(!gd)return;c=c||cards.feed;if(!c)return;c.body.querySelectorAll('.gridstrat').forEach(x=>x.remove());{const strat=gd.cls==='near'&&gd.rel==='fair'?'Grid-tied PV (no battery, small genset or none): grid is close and nationally reliable — size PV for daytime RO and buy night-time energy.':gd.cls==='near'?'Hybrid: grid is close but unreliable — keep the battery and genset sized above; grid lowers fuel use, not the capex.':gd.cls==='zni'?`Off-grid design: the locality is in a non-interconnected zone with ~${fmt(gd.zni?.hMed,0)} h/day of diesel service — PV + battery sized above; the existing genset can be the standby.`:gd.cls==='unmapped'?'Grid not mapped here but the country is electrified — design as hybrid (PV + small battery + genset) and confirm the nearest MV line with the utility; if a line is within ~2 km, drop the battery.':gd.cls==='mid'?`Off-grid design unless a ${fmt(gd.dLine,0)} km line extension (${gd.kv?fmt(gd.kv,0)+' kV':'MV'}) is cheaper than the battery + genset.`:'Off-grid design: no grid within reach — PV + battery + genset as sized above.';html(c,`<div class="gridstrat"><b>Grid strategy:</b> ${esc(strat)} <span class="hint">(${esc(gd.label||'')}${gd.rel?'; national reliability '+esc(gd.rel):''})</span></div>`);}
+}
+// Hybrid design: PV + battery + generator. RO runs ~20 h/day; PV covers the daytime load and charges the battery for the evening;
+// the generator covers the rest (night, cloudy days). share = fraction of yearly energy from solar.
+function hybridDesign(E,Q,sol,share){
+  if(!E||!sol)return null;const RUN=20,PR=0.75,DIRECT=0.5,RT=0.9,DOD=0.9,LPK=0.28,LAND=7.5;
+  const psh=sol.ann||sol.worst;const battShare=Math.max(0,share-DIRECT);
+  const pvEnergy=E*(Math.min(share,DIRECT)+battShare/RT);
+  const pv=pvEnergy/(psh*PR);const batt=battShare*E/(RT*DOD);
+  const loadKw=E/RUN;const gen=Math.ceil(loadKw*1.3/5)*5;
+  return {share,pv,batt,gen,fuelL:(1-share)*E*LPK,roNameplate:Q?Q*24/RUN:null,landHa:(pv*LAND+(Q||0)*0.4+(Q||0)*2)/10000,loadKw};
 }
 function adFeedOptions(ctx){
   const c=card('feed','Feed-water candidates & first-order sizing','energy');
@@ -1388,8 +1398,16 @@ function adFeedOptions(ctx){
   // a river the model cannot vouch for (small stream, urban sewage) never wins over a dependable source
   const elig=rows.filter(r=>r.E!=null),sure=elig.filter(r=>!r.doubtful);
   ctx.best=(sure.length?sure:elig).sort((a,b)=>a.E-b.E)[0]||null;
+  if(ctx.best&&psh){const sol=ctx.solar;const h70=hybridDesign(ctx.best.E,Q,sol,0.7),h90=hybridDesign(ctx.best.E,Q,sol,0.9);ctx.hyb={h70,h90};
+    // headline sizing = 70% solar hybrid
+    Object.assign(ctx.best,{pv:h70.pv,batt:h70.batt,gen:h70.gen,land:Math.round(h70.landHa*10000)});
+    const dsl=ctx.dieselGuess||1.2;
+    html(c,`<b>Hybrid design options — ${esc(ctx.best.src.split(' (')[0].split(' — ')[0])}</b>`+table([h70,h90],[
+      {h:'Solar share',f:h=>`<b>${Math.round(h.share*100)}%</b>`},{h:'PV kWp',num:1,f:h=>fmt(h.pv,0)},{h:'Battery kWh',num:1,f:h=>fmt(h.batt,0)},{h:'Generator kVA',num:1,f:h=>fmt(h.gen,0)},
+      {h:'Diesel L/day',num:1,f:h=>fmt(h.fuelL,0)},{h:'Diesel L/year',num:1,f:h=>fmt(h.fuelL*365,0)},{h:'Land ha',num:1,f:h=>fmt(h.landHa,2)}])+
+      `<div class="hint">RO sized for ~20 h/day (${Q?fmt(h70.roNameplate,0)+' m³/d nameplate':''}); PV runs the daytime load and charges the battery for the evening (≈ ${fmt(h70.batt/Math.max(1,h70.loadKw),1)} h at 70%, ${fmt(h90.batt/Math.max(1,h90.loadKw),1)} h at 90%); the generator covers night and cloudy days. Year-average sun ${fmt(sol.ann,1)} kWh/m²/d, performance ratio 0.75, battery 90% round-trip and depth of discharge, diesel ≈ 0.28 L/kWh. Going from 70% to 90% solar saves ~${fmt((h70.fuelL-h90.fuelL)*365,0)} L of diesel a year for ~${fmt(h90.pv-h70.pv,0)} kWp more PV and ~${fmt(h90.batt-h70.batt,0)} kWh more battery.</div>`);}
   gridStrategy(ctx,c);
-  html(c,`<div class="hint">Daytime-RO strategy: PV sized on worst-month GHI (${psh?fmt(psh,2):'?'} kWh/m²/d, PR 0.75); battery ≈ 1.5 h of RO load (water storage does the rest); standby genset ×1.25; land = PV 7.5 m²/kWp + plant 0.4 m²/(m³/d) + 2 days' storage. Inland brackish needs brine evaporation ponds (~60 m² per m³/d of plant) not included. Energy figures include intake and distribution; small-plant penalty not applied.</div>`);
+  html(c,`<div class="hint">Feed comparison table (PV / battery / generator columns): solar-only daytime sizing on worst-month sun (${psh?fmt(psh,2):'?'} kWh/m²/d, PR 0.75), used only to compare sources — the headline design is the 70% hybrid above; land = PV 7.5 m²/kWp + plant 0.4 m²/(m³/d) + 2 days' storage. Inland brackish needs brine evaporation ponds (~60 m² per m³/d of plant) not included. Energy figures include intake and distribution; small-plant penalty not applied.</div>`);
 }
 
 // ---------- global static datasets in the Supabase cache ----------
@@ -1484,7 +1502,7 @@ function renderBrief(ctx){
     {cls:ctx.ds?.nearest?'info':ctx.ds?.nearestPlanned?(/cancel/i.test(ctx.ds.nearestPlanned.status||'')?'na':'info'):'na',l:'Desal nearby',v:ctx.ds?.nearest?`${fmt(ctx.ds.nearest.d,0)}<small>km</small>`:ctx.ds?.nearestPlanned?`${fmt(ctx.ds.nearestPlanned.d,0)}<small>km ${/cancel/i.test(ctx.ds.nearestPlanned.status||'')?'cancelled':/operat|existing|built|commission|inaugur|deliver/i.test(ctx.ds.nearestPlanned.status||'')?'operating':'planned'}</small>`:'none ≤150 km',n:ctx.ds?.nearest?esc(ctx.ds.nearest.name):ctx.ds?.nearestPlanned?esc(ctx.ds.nearestPlanned.name):'no plant mapped'}];
   const verdict=[];
   const LN=ctx.localNeed;if(LN&&LN.problems&&LN.problems.length)verdict.push(`<div class="why"><b>Supply problem:</b> ${LN.problems.join('; ')}.${LN.crisis?' '+esc(LN.crisis.summary):''} ${LN.li<=1?`Access itself is high (about ${fmt(LN.est,0)}% lack basic water): a plant here would add reliability for part of an existing network, not reach unserved people.`:`Access is also limited (about ${fmt(LN.est,0)}% lack basic water).`}</div>`);
-  if(best&&sol){verdict.push(`<b>${esc(best.src)}</b> is the lowest-energy option found: about <b>${fmt(best.pv,0)} kWp</b> of PV with ${fmt(best.batt,0)} kWh of battery and a ${fmt(best.gen,0)} kVA standby set, on roughly ${fmt(best.land/10000,2)} ha.`);}
+  if(best&&sol){verdict.push(`<b>${esc(best.src)}</b> is the lowest-energy option found. ${ctx.hyb?`A <b>70%-solar hybrid</b> needs about <b>${fmt(ctx.hyb.h70.pv,0)} kWp</b> of PV, ${fmt(ctx.hyb.h70.batt,0)} kWh of battery and a ${fmt(ctx.hyb.h70.gen,0)} kVA generator (~${fmt(ctx.hyb.h70.fuelL,0)} L diesel/day), on roughly ${fmt(ctx.hyb.h70.landHa,2)} ha; at <b>90% solar</b>: ${fmt(ctx.hyb.h90.pv,0)} kWp, ${fmt(ctx.hyb.h90.batt,0)} kWh and ~${fmt(ctx.hyb.h90.fuelL,0)} L/day.`:`About <b>${fmt(best.pv,0)} kWp</b> of PV with ${fmt(best.batt,0)} kWh of battery and a ${fmt(best.gen,0)} kVA standby set.`}`);}
   else if(!best)verdict.push('No feed water with a known salinity was found in open data; the sizing below is for seawater or reuse only, or needs a well test.');
   if(micro&&micro.max>0)verdict.push(`Bacteriological contamination is recorded nearby (${esc(micro.name)} up to ${fmt(micro.max,0)} ${esc(micro.unit||'')}), which strengthens the case for a treated supply.`);
   if(!util&&ctx.utilChecked)verdict.push('No registered water utility serves this point, so a community plant would be a new supply rather than a replacement.');
