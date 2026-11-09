@@ -1,11 +1,10 @@
-# AquaScout — to-do list (end of day 2026-11-08)
+# AquaScout — to-do list (updated 2026-11-09)
 
 Live: https://nmauduit.github.io/aquascout/ · Repo: github.com/nmauduit/aquascout
 
 **Rule agreed:** the tool shows **publicly available data only** — no site knowledge typed in by the user; unknowns are shown as unknown (grey).
 
 ## A. Your actions
-- [ ] Confirm the plant's maximum output for brackish water and for river/fresh water (seawater = 5,000 m³/d).
 - [ ] Test more locations and send screenshots of anything wrong, surprising or missing (done: #1 Exuma / Torch Cay, #2 Santa Marta).
 - [ ] Optional: ask 2–3 suppliers for a quote on 3–4 SWRO containers totalling 5,000 m³/d (with UF pre-treatment, energy recovery, variable-flow operation) — lets us calibrate costs.
 
@@ -32,11 +31,18 @@ Live: https://nmauduit.github.io/aquascout/ · Repo: github.com/nmauduit/aquasco
 - Supabase 397 / 500 MB — room for about one more OSM region before Pro ($25/month).
 - Pre-bake CORS-blocked rasters (GEBCO); batch-screening RPC.
 
+## Done 2026-11-09
+- [x] **Energy per m³ on one whole-plant basis** (source + pre + RO + post + delivery + brine): seawater **3.6 kWh/m³** from the reference SWRO design (42% recovery, sea outfall); inland brackish with **deep-well injection** 1.4 / 1.9 / 3.2; river 0.7 / 1.3; reuse 1.8. Breakdown and brine line in the card.
+- [x] **RO runs 24 h/day**; "Power required" tile (continuous kW).
+- [x] **Plant ceiling 3,785 m³/d** (1 million US gal/day) for every source.
+- [x] **"Microgrid — key figures" card** (70% / 90% solar): load, peak, PV kWp, inverters, yield, land, battery kWh/kW, autonomy, generator kVA, running hours, diesel, 7-day tank, energy mix.
+- [x] **OSM weekly job hardened**: stalled downloads aborted, 20-min cap per step, stuck region skipped; Venezuela last.
+
 ## Done 2026-11-08
 - [x] **Hybrid sizing** — PV + battery + generator at **70% and 90% solar share** (PV kWp, battery kWh, generator kVA, diesel L/day and L/year, land); headline and energy economics use the 70% design. RO sized for ~20 h/day.
 - [x] **City demand with documented deficit** — Santa Marta: radius population × documented 60–65% deficit as upper bound → plant at the 5,000 m³/d ceiling, ~4 plants to cover the upper estimate.
 - [x] **Supplier & competitor reference** in project doc `containerized-solar-ro-suppliers.md` (not in the app).
-- [x] **Target demand in cities / large populations** — residents × share without basic or reliable water (range), capped at one plant (**5,000 m³/d = seawater maximum**; brackish/river ceilings to be confirmed — same value used meanwhile), with the number of plants to cover the upper estimate. Villages and towns below the cap are still sized on the whole community.
+- [x] **Target demand in cities / large populations** — residents × share without basic or reliable water (range), capped at one plant (now **3,785 m³/d**), with the number of plants to cover the upper estimate. Villages and towns below the cap are still sized on the whole community.
 - [x] **River check** — 3 years of daily flow (dry-season low), seasonal / small-stream / urban-sewage / tidal flags; doubtful rivers never become the "best feed"; large rivers 25–100 km away sampled as regional-transfer options.
 - [x] **People count from WorldPop 2020** — residents within 2 km and within the radius; used when OSM has no usable figure (cities: see target demand).
 - [x] **Feed tile** flags assumed river salinity ("fresh?", grey).
