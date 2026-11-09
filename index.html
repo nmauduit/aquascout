@@ -107,6 +107,7 @@ section.card.loading>.body::before{content:"Fetching from source…";display:blo
 .lg-tog:focus-visible{outline:2px solid var(--accent,#2f6fb0);outline-offset:2px;border-radius:3px}
 .lg-car{font-size:11px;color:var(--muted);transition:transform .15s}
 .lg-body{display:flex;flex-direction:column;gap:2px;margin-top:4px}
+.poplg{background:var(--bg);padding:6px 8px;border-radius:8px;font-size:11px;max-width:150px}.poplg i{display:inline-block;width:12px;height:10px;margin-right:5px;vertical-align:middle;border:1px solid #0002}
 .lg-collapsed .lg-body{display:none}
 .lg-collapsed .lg-car{transform:rotate(-90deg)}
 .lg-collapsed{padding:4px 8px!important}
@@ -259,7 +260,16 @@ const ArcTile=L.TileLayer.extend({getTileUrl:function(c){const z=c.z,n=Math.pow(
 const whymap=new ArcTile('https://services.bgr.de/arcgis/rest/services/grundwasser/whymap_gwr/MapServer',{layerIds:'10,11',opacity:.45,attribution:'WHYMAP © BGR/UNESCO'});
 const bgsSEC=new ArcTile('https://map.bgs.ac.uk/arcgis/rest/services/Africa_Groundwater/Africa_Groundwater_v2/MapServer',{layerIds:'11',opacity:.55,attribution:'Africa Groundwater Atlas © BGS'});
 const bgsDepth=new ArcTile('https://map.bgs.ac.uk/arcgis/rest/services/Africa_Groundwater/Africa_Groundwater_v2/MapServer',{layerIds:'1',opacity:.55,attribution:'Africa Groundwater Atlas © BGS'});
-const ctl=L.control.layers({'Streets (OpenStreetMap)':baseOSM,'Satellite (Esri imagery + labels)':baseSat,'Terrain (OpenTopoMap)':baseTopo,'Light grey (Esri) — best for choropleths':baseLight},{'Surface water occurrence (JRC)':gsw,'Bathymetry (GEBCO)':gebco,'Groundwater resources & saline areas (WHYMAP)':whymap,'Africa: groundwater conductivity (BGS atlas)':bgsSEC,'Africa: depth to groundwater (BGS atlas)':bgsDepth},{collapsed:true,position:'topright'}).addTo(map);
+// Population density (WorldPop 2020, people per km²) — Esri-hosted WorldPop image service, coloured server-side in 8 classes
+const POP_CLASSES=[[1,10,'#ffffcc'],[10,50,'#ffeda0'],[50,100,'#fed976'],[100,250,'#feb24c'],[250,500,'#fd8d3c'],[500,1000,'#fc4e2a'],[1000,5000,'#e31a1c'],[5000,1e6,'#b10026']];
+const POP_RR=JSON.stringify({rasterFunction:'Colormap',rasterFunctionArguments:{Colormap:POP_CLASSES.map((c,i)=>[i+1,...c[2].match(/\w\w/g).map(h=>parseInt(h,16))]),Raster:{rasterFunction:'Remap',rasterFunctionArguments:{InputRanges:POP_CLASSES.flatMap(c=>[c[0],c[1]]),OutputValues:POP_CLASSES.map((c,i)=>i+1),NoDataRanges:[-1e12,1],AllowUnmatched:false}}}});
+const PopLayer=L.TileLayer.extend({getTileUrl(c){const n=2**c.z,W=20037508.342789244,s=2*W/n,x0=-W+c.x*s,y1=W-c.y*s;
+  const svc=c.z>=11?'WorldPop_Population_Density_100m':'WorldPop_Population_Density_1km';
+  return `https://worldpop.arcgis.com/arcgis/rest/services/${svc}/ImageServer/exportImage?bbox=${x0},${y1-s},${x0+s},${y1}&bboxSR=3857&imageSR=3857&size=256,256&format=png32&transparent=true&time=1577836800000&f=image&renderingRule=${encodeURIComponent(POP_RR)}`;}});
+const popLayer=new PopLayer('',{opacity:.65,maxZoom:18,attribution:'Population: WorldPop 2020 (CC-BY 4.0) via Esri'});
+const popLegend=L.control({position:'bottomright'});popLegend.onAdd=()=>{const d=L.DomUtil.create('div','legend poplg');d.innerHTML='<b>People / km² (WorldPop 2020)</b><div class="lg-body">'+POP_CLASSES.map(c=>`<span><i style="background:${c[2]}"></i>${c[0]>=1000?(c[0]/1000)+'k':c[0]}${c[1]<1e6?'–'+(c[1]>=1000?(c[1]/1000)+'k':c[1]):'+'}</span>`).join('')+'</div>';return d;};
+map.on('overlayadd',e=>{if(e.layer===popLayer)popLegend.addTo(map);});map.on('overlayremove',e=>{if(e.layer===popLayer)popLegend.remove();});
+const ctl=L.control.layers({'Streets (OpenStreetMap)':baseOSM,'Satellite (Esri imagery + labels)':baseSat,'Terrain (OpenTopoMap)':baseTopo,'Light grey (Esri) — best for choropleths':baseLight},{'Population density (WorldPop 2020)':popLayer,'Surface water occurrence (JRC)':gsw,'Bathymetry (GEBCO)':gebco,'Groundwater resources & saline areas (WHYMAP)':whymap,'Africa: groundwater conductivity (BGS atlas)':bgsSEC,'Africa: depth to groundwater (BGS atlas)':bgsDepth},{collapsed:true,position:'topright'}).addTo(map);
 let marker,circle,layerGroup=L.layerGroup().addTo(map);
 const colors={sea:'#2c5e8a',brackish:'#4f8a8b',fresh:'#2f8f5b',waste:'#7a5a3a'};
 function dot(lat,lon,kind,label){L.circleMarker([lat,lon],{radius:6,color:colors[kind],fillColor:colors[kind],fillOpacity:.8,weight:1}).bindPopup(label).addTo(layerGroup);}
