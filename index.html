@@ -158,6 +158,7 @@ section.card.closed>.body{display:none}
 .verdict{font-size:13px;line-height:1.5;border-top:1px solid var(--line);padding-top:8px}
 .why{border-left:4px solid var(--bad);background:color-mix(in srgb,var(--bad) 10%,transparent);border-radius:6px;padding:8px 10px;margin:4px 0 8px;line-height:1.45}
 .why .hint{margin-top:4px}
+.note{border-left:4px solid var(--line);background:color-mix(in srgb,var(--muted) 8%,transparent);border-radius:6px;padding:8px 10px;margin:4px 0 8px;line-height:1.45}
 .card.alert{border-color:var(--bad);box-shadow:inset 4px 0 0 var(--bad)}
 .dotc{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle;background:var(--muted)}
 .dotc.ok{background:var(--good)} .dotc.warn{background:var(--warn)} .dotc.bad{background:var(--bad)}
@@ -482,10 +483,13 @@ function adLocalNeed(ctx,osm,dem){
   if(score>=2)li=Math.min(3,li+1);else if(score<=-2)li=Math.max(0,li-1);
   // a documented crisis or a quality failure sets a floor on the need level
   const level=L[li];const cls=li>=3?'bad':li>=2?'bad':li>=1?'warn':'ok';
+  const cay=ctx.smallCay;
   const contLvl0=av==null?null:av<60?'poor':av<80?'unreliable':av<95?'mostly reliable':'reliable';
   let contLvlF=contLvl0;if(cr&&cr.type.includes('shortage'))contLvlF=cr.severity==='severe'?'poor':(contLvl0==='poor'?'poor':'unreliable');
   if(problems.length){setStatus(c,`supply problem · access need ${level} (~${fmt(est,0)}% lack basic water, ${set})`,'bad');progress(c.id,'done');c.el.classList.add('alert');}
+  else if(cay)setStatus(c,`unknown · small cay — national figures do not apply`,'');
   else setStatus(c,`${level} need · ~${fmt(est,0)}% lack basic water (${set})`,'ok');
+  if(cay)html(c,`<div class="note"><b>Small outer cay — local supply unknown.</b> This point is on ${cay.name?esc(cay.name)+', ':''}an island of about ${fmt(cay.area,cay.area<10?1:0)} km² with no water utility or desalination plant mapped on it. The figures below are national averages and probably do not describe it: small cays often rely on cisterns, private wells, trucked or barged water, or a private plant. Check locally before relying on them.</div>`);
   const balance=li<=1?`Access is already high here (about ${fmt(est,0)}% lack basic water), so the issue is the reliability or quality of an existing supply, not people without one. A plant would supplement the network — e.g. for hotels, hospitals, housing estates or the worst-served neighbourhoods — rather than serve an unconnected community.`:`Access is also limited (about ${fmt(est,0)}% lack basic water).`;
   if(problems.length)html(c,`<div class="why"><b>Supply problem found:</b> ${problems.map(x=>x[0].toUpperCase()+x.slice(1)).join('; ')}.<br>${balance}${cr?`<div class="hint">Crisis entry is curated from press and government reports (${esc(cr.since)}); check the current situation locally. ${cr.sources.map(([t,u])=>`<a href="${esc(u)}" target="_blank" rel="noopener">${esc(t)}</a>`).join(' · ')}</div>`:''}</div>`);
   html(c,`<div style="font-size:15px"><span class="pill ${cls}">${level.toUpperCase()} ACCESS NEED</span> &nbsp;About <b>${fmt(est,0)}%</b> of people here are likely to lack even basic drinking water${estSM!=null?`, and about <b>${fmt(estSM,0)}%</b> lack safely managed water`:''}.</div>`);
@@ -504,7 +508,7 @@ function adLocalNeed(ctx,osm,dem){
   if(ev.length)html(c,'<b>Local evidence</b><ul class="plain">'+ev.map(x=>`<li>${x.e>0?'▲':x.e<0?'▼':'•'} ${x.t}</li>`).join('')+`</ul><div class="hint">▲ raises the need level, ▼ lowers it. Net ${score>0?'+':''}${score}${score>=2?' → level raised one step':score<=-2?' → level lowered one step':''}.</div>`);
   html(c,'<div class="hint">Model estimate, not a measurement: regional WHO/UNICEF survey value × national rural/urban gap ratio, then adjusted by local evidence. Confirm with a household survey or the municipal water register before committing.</div>');
   src(c,'WHO/UNICEF JMP (national, subnational and service components), OSM, utility registers, WPdx, INS IRCA','https://washdata.org/data');
-  return {est,estSM,level,li,set,score,ev,av,qual,problems,crisis:cr,contLvl:contLvlF,safeV,safeLvl,safeSrc:ircaUse!=null?'IRCA':qual!=null?'JMP':null,compYear:cmp&&cmp.year};
+  return {cay,est,estSM,level,li,set,score,ev,av,qual,problems,crisis:cr,contLvl:contLvlF,safeV,safeLvl,safeSrc:ircaUse!=null?'IRCA':qual!=null?'JMP':null,compYear:cmp&&cmp.year};
 }
 async function adDesalNearby(lat,lon){
   const c=card('desal','Desalination plants nearby (existing & planned)','system');
@@ -523,7 +527,7 @@ async function adDesalNearby(lat,lon){
     html(c,'<div class="hint">OSM coverage of desal plants is partial; the global Jones et al. 2019 inventory (~16,000 plants with capacity and feed type) is a to-do. Add planned projects to data/planned-desal.json with a source link.</div>');
     src(c,'OpenStreetMap man_made=desalination_plant · curated list in repo');
     cov('Desalination plants nearby',ex.length||pn.length?'ok':'none',`${ex.length} existing · ${pn.length} planned`);
-    return {nearest:ex[0]||null,nearestPlanned:pn[0]||null};
+    return {nearest:ex[0]||null,nearestPlanned:pn[0]||null,all:[...ex,...pn]};
   }catch(e){fail(c,e,'desal');return {};}
 }
 
@@ -1134,6 +1138,17 @@ async function adBrazil(lat,lon,r,loc){
 
 // ---------- electricity grid: proximity, reliability ----------
 const OVERPASS_MIRRORS=['https://overpass-api.de/api/interpreter','https://overpass.kumi.systems/api/interpreter','https://lz4.overpass-api.de/api/interpreter'];
+// Which island is this point on? (OSM place=island/islet polygons). Used to warn when national statistics cannot describe a small outer cay.
+async function islandAt(lat,lon){
+  const q=`[out:json][timeout:20];is_in(${lat},${lon})->.a;(way(pivot.a)[place~"^(island|islet)$"];relation(pivot.a)[place~"^(island|islet)$"];);out tags geom;`;
+  try{const r=await Promise.race([overpass(q,25000),new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),30000))]);
+    const els=(r.elements||[]).map(e=>{let rings=[];if(e.type==='way'&&e.geometry)rings=[e.geometry.map(g=>[g.lon,g.lat])];else if(e.members)rings=e.members.filter(m=>m.role==='outer'&&m.geometry).map(m=>m.geometry.map(g=>[g.lon,g.lat]));
+      // area of each ring in km² (equirectangular is fine at island scale)
+      let a=0;for(const ring of rings){let s2=0;const k=Math.cos(lat*Math.PI/180)*111.32;for(let i=0,j=ring.length-1;i<ring.length;j=i++)s2+=(ring[j][0]*k)*(ring[i][1]*110.57)-(ring[i][0]*k)*(ring[j][1]*110.57);a+=Math.abs(s2)/2;}
+      return {name:e.tags?.name||e.tags?.['name:en']||null,place:e.tags?.place,area:a,rings};}).filter(x=>x.area>0).sort((a,b)=>a.area-b.area);
+    return els[0]||null;
+  }catch(e){return null;}
+}
 async function overpass(q,timeout=100000){let last=null;for(const m of OVERPASS_MIRRORS){try{return await getJSON(m+'?data='+encodeURIComponent(q),{timeout});}catch(e){last=e;}}throw last||new Error('Overpass unavailable');}
 const voltKV=v=>{if(!v)return null;const n=String(v).split(/[;,/]/).map(x=>parseFloat(x)).filter(x=>!isNaN(x));return n.length?Math.max(...n)/1000:null;};
 const voltColor=kv=>kv==null?'#888':kv>=200?'#b0005c':kv>=100?'#d7301f':kv>=30?'#f46d43':'#fdae61';
@@ -1393,7 +1408,7 @@ function renderBrief(ctx){
     {cls:util?'ok':ctx.utilChecked?'warn':'na',l:'Existing supply',v:util?'utility':ctx.utilChecked?'self-supplied':'unknown',n:util?esc(util):ctx.utilChecked?'no registered system found':'no open utility register for this country'},
     {cls:covCls,l:'Data coverage',v:`${okN}<small>/ ${totN}</small>`,n:ctx.wwtp?`WWTP nearby${ctx.wwtpName?': '+esc(ctx.wwtpName):''}`:'no treatment plant mapped'},
     (ctx.localNeed&&(ctx.localNeed.av!=null||ctx.localNeed.safeV!=null||ctx.localNeed.qual!=null||ctx.localNeed.crisis)?(()=>{const n=ctx.localNeed;const bad=(n.problems&&n.problems.length)||(n.av!=null&&n.av<60)||(n.safeV!=null&&n.safeV>35)||(n.safeV==null&&n.qual!=null&&n.qual<60);const warn=(n.av!=null&&n.av<80)||(n.safeV!=null&&n.safeV>14)||(n.safeV==null&&n.qual!=null&&n.qual<80);return {cls:bad?'bad':warn?'warn':'ok',l:'Continuity / safety',v:`${n.contLvl?esc(n.contLvl):'—'}<small> / ${n.safeLvl?esc(n.safeLvl):'—'}</small>`,n:`${n.crisis?'documented crisis: '+esc(n.crisis.name)+' · ':''}${n.av!=null?fmt(n.av,0)+'% have water when needed':''}${n.av!=null&&n.safeSrc?' · ':''}${n.safeSrc==='IRCA'?'IRCA '+fmt(n.safeV,1)+' ('+esc(n.set)+')':n.safeSrc==='JMP'?fmt(n.qual,0)+'% contamination-free':''}`};})():null),
-    (ctx.localNeed&&ctx.localNeed.est!=null?{cls:ctx.localNeed.li>=2?'bad':ctx.localNeed.li>=1?'warn':'ok',l:'Access need here (est.)',v:`${fmt(ctx.localNeed.est,0)}<small>% lack basic · ${esc(ctx.localNeed.level)}</small>`,n:`${esc(ctx.localNeed.set)}${ctx.need?.sub?' · region '+esc(ctx.need.sub.region)+' '+ctx.need.sub.year:''}${ctx.localNeed.estSM!=null?' · ~'+fmt(ctx.localNeed.estSM,0)+'% lack safely managed':''}`}:ctx.need?.sub?{cls:ctx.need.sub.Basic>=95?'ok':ctx.need.sub.Basic>=85?'warn':'bad',l:'Water need (region)',v:`${fmt(100-ctx.need.sub.Basic,0)}<small>% lack basic</small>`,n:`${esc(ctx.need.sub.region)} ${ctx.need.sub.year} · rural poorest: ${fmt(100-(ctx.need.sub.country.rural_q1?.Basic??100),0)}% lack basic`}:
+    (ctx.localNeed&&ctx.localNeed.cay?{cls:'na',l:'Access need here',v:'unknown',n:`small cay (${fmt(ctx.localNeed.cay.area,ctx.localNeed.cay.area<10?1:0)} km²) — national figure ~${fmt(ctx.localNeed.est,0)}% does not apply`}:ctx.localNeed&&ctx.localNeed.est!=null?{cls:ctx.localNeed.li>=2?'bad':ctx.localNeed.li>=1?'warn':'ok',l:'Access need here (est.)',v:`${fmt(ctx.localNeed.est,0)}<small>% lack basic · ${esc(ctx.localNeed.level)}</small>`,n:`${esc(ctx.localNeed.set)}${ctx.need?.sub?' · region '+esc(ctx.need.sub.region)+' '+ctx.need.sub.year:''}${ctx.localNeed.estSM!=null?' · ~'+fmt(ctx.localNeed.estSM,0)+'% lack safely managed':''}`}:ctx.need?.sub?{cls:ctx.need.sub.Basic>=95?'ok':ctx.need.sub.Basic>=85?'warn':'bad',l:'Water need (region)',v:`${fmt(100-ctx.need.sub.Basic,0)}<small>% lack basic</small>`,n:`${esc(ctx.need.sub.region)} ${ctx.need.sub.year} · rural poorest: ${fmt(100-(ctx.need.sub.country.rural_q1?.Basic??100),0)}% lack basic`}:
     {cls:ctx.need?.gapRu==null?'':ctx.need.gapRu>=50?'bad':ctx.need.gapRu>=20?'warn':'ok',l:'Rural water need (national)',v:ctx.need?.gapRu!=null?`${fmt(ctx.need.gapRu,0)}<small>% lack safe water</small>`:'—',n:ctx.need?.d?`${esc(ctx.need.d.name)} rural, JMP ${esc(ctx.need.d.smdw_y||ctx.need.d.basw_y||'')}`:'no JMP estimate'}),
     {cls:ctx.grid?(ctx.grid.cls==='near'?(ctx.grid.rel==='poor'?'warn':'ok'):ctx.grid.cls==='mid'?'warn':ctx.grid.cls==='zni'?'bad':ctx.grid.cls==='none'||ctx.grid.cls==='far'?'bad':ctx.grid.cls==='unmapped'?'na':''):'na',l:'Electricity grid',v:ctx.grid?(ctx.grid.cls==='zni'?`${fmt(ctx.grid.zni?.hMed,0)}<small>h/day (ZNI)</small>`:ctx.grid.dLine!=null?`${fmt(ctx.grid.dLine,ctx.grid.dLine<10?1:0)}<small>km to line${ctx.grid.kv?' · '+fmt(ctx.grid.kv,0)+' kV':''}</small>`:ctx.grid.cls==='unmapped'?'unmapped':'off-grid'):'<small>querying…</small>',n:ctx.grid?(ctx.grid.util?esc(ctx.grid.util.name):ctx.grid.rel?`national reliability: ${esc(ctx.grid.rel)}`:ctx.grid.nearestPlant?`nearest plant: ${esc(ctx.grid.nearestPlant.name)} (${esc(ctx.grid.nearestPlant.src||'?')})`:'no line mapped'):'grid lookup still running'},
     {cls:ctx.ds?.nearest?'info':ctx.ds?.nearestPlanned?(/cancel/i.test(ctx.ds.nearestPlanned.status||'')?'na':'info'):'na',l:'Desal nearby',v:ctx.ds?.nearest?`${fmt(ctx.ds.nearest.d,0)}<small>km</small>`:ctx.ds?.nearestPlanned?`${fmt(ctx.ds.nearestPlanned.d,0)}<small>km ${/cancel/i.test(ctx.ds.nearestPlanned.status||'')?'cancelled':/operat|existing|built|commission|inaugur|deliver/i.test(ctx.ds.nearestPlanned.status||'')?'operating':'planned'}</small>`:'none ≤150 km',n:ctx.ds?.nearest?esc(ctx.ds.nearest.name):ctx.ds?.nearestPlanned?esc(ctx.ds.nearestPlanned.name):'no plant mapped'}];
@@ -1404,8 +1419,9 @@ function renderBrief(ctx){
   if(micro&&micro.max>0)verdict.push(`Bacteriological contamination is recorded nearby (${esc(micro.name)} up to ${fmt(micro.max,0)} ${esc(micro.unit||'')}), which strengthens the case for a treated supply.`);
   if(!util&&ctx.utilChecked)verdict.push('No registered water utility serves this point, so a community plant would be a new supply rather than a replacement.');
   else if(!util)verdict.push('Whether a utility serves this point is not in open data for this country — check with the national water utility.');
-  if(ctx.localNeed&&ctx.localNeed.est!=null)verdict.push(`Access need here is estimated <b>${esc(ctx.localNeed.level)}</b>: about ${fmt(ctx.localNeed.est,0)}% of people in this ${esc(ctx.localNeed.set)} area likely lack basic drinking water${ctx.localNeed.estSM!=null?` and ${fmt(ctx.localNeed.estSM,0)}% lack safely managed water`:''}.`);
-  if(ctx.localNeed&&(ctx.localNeed.contLvl||ctx.localNeed.safeLvl)){const n=ctx.localNeed;const weak=!(n.problems&&n.problems.length)&&((n.av!=null&&n.av<80)||(n.safeV!=null&&n.safeV>14)||(n.safeV==null&&n.qual!=null&&n.qual<80));verdict.push(`Supply continuity is <b>${esc(n.contLvl||'unknown')}</b> and safety <b>${esc(n.safeLvl||'unknown')}</b>${weak?' — even connected households are a market for a reliable, treated on-site supply':''}.`);}
+  if(ctx.localNeed&&ctx.localNeed.cay){const cy=ctx.localNeed.cay;verdict.push(`This point is on ${cy.name?'<b>'+esc(cy.name)+'</b>, ':''}a small cay (about ${fmt(cy.area,cy.area<10?1:0)} km²) with no water utility or desalination plant mapped on it. National water statistics do not describe places like this, so the local supply is <b>unknown</b> from public data — verify on site.`);}
+  else if(ctx.localNeed&&ctx.localNeed.est!=null)verdict.push(`Access need here is estimated <b>${esc(ctx.localNeed.level)}</b>: about ${fmt(ctx.localNeed.est,0)}% of people in this ${esc(ctx.localNeed.set)} area likely lack basic drinking water${ctx.localNeed.estSM!=null?` and ${fmt(ctx.localNeed.estSM,0)}% lack safely managed water`:''}.`);
+  if(ctx.localNeed&&!ctx.localNeed.cay&&(ctx.localNeed.contLvl||ctx.localNeed.safeLvl)){const n=ctx.localNeed;const weak=!(n.problems&&n.problems.length)&&((n.av!=null&&n.av<80)||(n.safeV!=null&&n.safeV>14)||(n.safeV==null&&n.qual!=null&&n.qual<80));verdict.push(`Supply continuity is <b>${esc(n.contLvl||'unknown')}</b> and safety <b>${esc(n.safeLvl||'unknown')}</b>${weak?' — even connected households are a market for a reliable, treated on-site supply':''}.`);}
   else if(ctx.need?.gapRu!=null&&ctx.need.gapRu>=20)verdict.push(`Nationally, ${fmt(ctx.need.gapRu,0)}% of the rural population lacks safely managed water (JMP), which supports prioritising this region.`);
   if(ctx.ds?.nearest)verdict.push(`An existing desalination plant (${esc(ctx.ds.nearest.name)}) operates ${fmt(ctx.ds.nearest.d,0)} km away — a reference for feed water, permits and operators.`);
   if(ctx.grid){const gd=ctx.grid;if(gd.cls==='zni')verdict.push(`The locality is in Colombia's non-interconnected zone with about ${fmt(gd.zni?.hMed,0)} h/day of generator service, so a solar-battery plant is the realistic design and can share the existing genset.`);else if(gd.cls==='unmapped')verdict.push(`No grid line is mapped in OpenStreetMap here, although the country is ${fmt(gd.wb['EG.ELC.ACCS.ZS'].v,0)} % electrified — confirm the nearest line before choosing between hybrid and off-grid.`);else if(gd.cls==='none'||gd.cls==='far')verdict.push(`No grid line is mapped within reach (${esc(gd.label)}), so plan fully off-grid.`);else if(gd.cls==='near'&&gd.rel==='poor')verdict.push(`The grid is close (${fmt(gd.dLine,1)} km) but nationally unreliable (${esc(gd.rel)}), so keep storage and a standby set.`);else if(gd.cls==='near')verdict.push(`A ${gd.kv?fmt(gd.kv,0)+' kV ':''}line passes ${fmt(gd.dLine,1)} km away${gd.util?' ('+esc(gd.util.name)+')':''}, so a grid-tied PV plant without battery is an option.`);}
@@ -1465,7 +1481,7 @@ async function scan(lat,lon){
     const osmP=adOSM(lat,lon,r);
     const solar=await adSolar(lat,lon);
     const flow=await adRiverFlow(lat,lon);
-    const natP=runNational(cc,lat,lon,r,loc);
+    const natP=runNational(cc,lat,lon,r,loc);const islP=islandAt(lat,lon);
     const gridP=osmP.catch(()=>{}).then(()=>adGrid(lat,lon,r,cc,loc)).catch(e=>({cls:'none',label:'grid lookup failed: '+e.message,rel:null}));
     const osm=await osmP;
     let wp=null; // WorldPop API is not callable from a browser page (CORS); backend item
@@ -1477,6 +1493,7 @@ async function scan(lat,lon){
     const nat=await natP;Object.assign(ctx,nat);
     ctx.comp=(await loadComp())[a3]||null;
     ctx.crisis=(await loadCrises()).map(x=>({...x,d:km([lat,lon],[x.lat,x.lon])})).filter(x=>x.d<=x.radius_km).sort((a,b)=>(a.severity==='severe'?0:1)-(b.severity==='severe'?0:1)||a.d-b.d)[0]||null;
+    {const isl=await islP;if(isl&&isl.area<50){const inside=(ctx.ds?.all||[]).filter(p=>isl.rings.some(rg=>pipRing(p.lo,p.la,rg)));if(!inside.length&&!ctx.utility)ctx.smallCay={name:isl.name,area:isl.area};}}
     ctx.grid=await Promise.race([gridP,new Promise(r=>setTimeout(()=>r(null),40000))]);
     ctx.localNeed=adLocalNeed(ctx,osm,dem);
     if(!ctx.grid)gridP.then(async g=>{ctx.grid=g;gridStrategy(ctx);if(cards.localneed){cards.localneed.el.remove();delete cards.localneed;}ctx.localNeed=adLocalNeed(ctx,osm,dem);if(cards.econ){cards.econ.el.remove();delete cards.econ;}await adEconomics(ctx);renderBrief(ctx);});
