@@ -922,16 +922,6 @@ async function adDepth(lat,lon,coast){
   src(c,'GEBCO 2024 grid, WMS overlay','https://www.gebco.net/data_and_products/gebco_web_services/web_map_service/');
   return null;
 }
-async function adWorldPop(lat,lon,r){
-  // population within radius from WorldPop 2020 (unconstrained, 100 m). Async task API.
-  const R=Math.min(r,10);const b=bbox(lat,lon,R);
-  const poly={type:'FeatureCollection',features:[{type:'Feature',properties:{},geometry:{type:'Polygon',coordinates:[[[b[0],b[1]],[b[2],b[1]],[b[2],b[3]],[b[0],b[3]],[b[0],b[1]]]]}}]};
-  const u=`https://api.worldpop.org/v1/services/stats?dataset=wpgppop&year=2020&geojson=${encodeURIComponent(JSON.stringify(poly))}&runasync=false`;
-  const r1=await getJSON(u,{timeout:60000});
-  let data=r1.data;if(!data&&r1.taskid){for(let i=0;i<20&&!data;i++){await new Promise(z=>setTimeout(z,2000));const t=await getJSON(`https://api.worldpop.org/v1/tasks/${r1.taskid}`);if(t.status==='finished')data=t.data;}}
-  if(!data||data.total_population==null)throw new Error('no WorldPop result');
-  return {pop:Math.round(data.total_population),R};
-}
 
 // ---------- WPdx water points (global; dense in Africa, also Haiti, Bangladesh, India, Guatemala) ----------
 async function adWPdx(lat,lon,r){
