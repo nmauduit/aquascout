@@ -555,7 +555,7 @@ const dossier=$('#dossier');
 const cards={};
 const GROUPS=[['site','Site'],['sources','Water sources & quantity'],['quality','Water quality'],['system','Existing water system'],['energy','Solar & plant sizing'],['coverage','Data coverage']];
 const groupEl={};let progressEl=null,progressItems={};
-const SRC_LABELS={isl:'Island check (OSM)',hw:'Wastewater plants (HydroWASTE)',sal:'Measured salinity (global DB)',alts:'Alternatives to a new plant',loc:'Place & elevation (OSM, Open-Meteo)',solar:'Solar & rain (NASA POWER)',osm:'Water bodies & infrastructure (OpenStreetMap)',flow:'River discharge (GloFAS)',demand:'Community & demand',usgs:'USGS gauges & wells',wqp:'Water Quality Portal (chemistry, E. coli)',util:'EPA water utility',echo:'EPA ECHO wastewater',hubeau:"Hub'Eau (eau potable, nappes, rivières)",'co-irca':'INS SIVICAP (IRCA)','co-q':'IDEAM water quality','co-st':'IDEAM stations','co-sui':'Superservicios RUPS',whymap:'WHYMAP global hydrogeology',need:'Water access (WHO/UNICEF JMP)',localneed:'Water need at this location',desal:'Desalination plants nearby',gebco:'GEBCO sea depth','br-st':'ANA hydromet network','br-gw':'RIMAS groundwater wells','br-ete':'ANA sewage plants','br-note':'Brazil quality (pending)',wpdx:'WPdx water points',bgs:'Africa Groundwater Atlas (BGS)',portals:'National portals',nat:'National network',grid:'Electricity grid (OSM, HIFLD, IPSE ZNI, World Bank)',feed:'Feed-water sizing',econ:'Energy cost: grid vs solar',cov:'Coverage report'};
+const SRC_LABELS={mg:'Microgrid key figures',isl:'Island check (OSM)',hw:'Wastewater plants (HydroWASTE)',sal:'Measured salinity (global DB)',alts:'Alternatives to a new plant',loc:'Place & elevation (OSM, Open-Meteo)',solar:'Solar & rain (NASA POWER)',osm:'Water bodies & infrastructure (OpenStreetMap)',flow:'River discharge (GloFAS)',demand:'Community & demand',usgs:'USGS gauges & wells',wqp:'Water Quality Portal (chemistry, E. coli)',util:'EPA water utility',echo:'EPA ECHO wastewater',hubeau:"Hub'Eau (eau potable, nappes, rivières)",'co-irca':'INS SIVICAP (IRCA)','co-q':'IDEAM water quality','co-st':'IDEAM stations','co-sui':'Superservicios RUPS',whymap:'WHYMAP global hydrogeology',need:'Water access (WHO/UNICEF JMP)',localneed:'Water need at this location',desal:'Desalination plants nearby',gebco:'GEBCO sea depth','br-st':'ANA hydromet network','br-gw':'RIMAS groundwater wells','br-ete':'ANA sewage plants','br-note':'Brazil quality (pending)',wpdx:'WPdx water points',bgs:'Africa Groundwater Atlas (BGS)',portals:'National portals',nat:'National network',grid:'Electricity grid (OSM, HIFLD, IPSE ZNI, World Bank)',feed:'Feed-water sizing',econ:'Energy cost: grid vs solar',cov:'Coverage report'};
 let scanT0=0,scanTimer=null;
 function scaffold(){dossier.innerHTML='';progressEl=document.createElement('div');progressEl.className='status';progressEl.innerHTML='<div class="hd"><span>Scanning…</span><span class="t">0 s</span></div><ul></ul>';dossier.appendChild(progressEl);progressItems={};scanT0=Date.now();clearInterval(scanTimer);scanTimer=setInterval(()=>{const t=progressEl.querySelector('.hd .t');if(t&&!progressEl.classList.contains('complete'))t.textContent=Math.round((Date.now()-scanT0)/1000)+' s';},1000);for(const [id,label] of GROUPS){const g=document.createElement('div');g.className='grp';g.id='g-'+id;g.hidden=true;g.innerHTML=`<h3>${esc(label)}</h3>`;dossier.appendChild(g);groupEl[id]=g;}}
 function progress(id,state){if(!progressEl)return;let it=progressItems[id];if(!it){it=document.createElement('li');it.innerHTML=`<i></i><span>${esc(SRC_LABELS[id]||id)}</span><em class="ms"></em>`;it.dataset.t0=Date.now();progressEl.querySelector('ul').appendChild(it);progressItems[id]=it;}it.className=state;if(state!=='run')it.querySelector('.ms').textContent=((Date.now()-(+it.dataset.t0))/1000).toFixed(1)+' s';const n=Object.values(progressItems),d=n.filter(x=>x.className!=='run').length,bad=n.filter(x=>x.className==='err').length;progressEl.querySelector('.hd span').textContent=d<n.length?`Fetching ${d}/${n.length} sources…`:running?`Analysing… ${n.length} sources in${bad?`, ${bad} failed`:''}`:`Scan complete — ${n.length} sources${bad?`, ${bad} failed`:''}`;}
@@ -738,8 +738,8 @@ async function adWorldPop(lat,lon,r){
     const j=await res.json();const st=j.statistics&&j.statistics[0];return st?Math.round(st.mean*st.count):null;};
   try{const [near,all]=await Promise.all([one(2),one(r)]);return near==null?null:{pop:near,R:2,radiusPop:all,r};}catch(e){return null;}
 }
-// Plant ceiling: 5,000 m³/day is the seawater maximum of the planned system; brackish/river ceilings not set yet, so the same cap is used
-const PLANT_MAX_M3D=5000,LPCD=100,LOSS=1.15,CAP_PEOPLE=Math.floor(PLANT_MAX_M3D*1000/(LPCD*LOSS));
+// Plant ceiling: 3,785 m³/day (1 million US gal/day) is the maximum of the planned system; same cap used for every source until per-source values are set. Was: used
+const PLANT_MAX_M3D=3785,LPCD=100,LOSS=1.15,CAP_PEOPLE=Math.floor(PLANT_MAX_M3D*1000/(LPCD*LOSS));
 // In cities (or when residents exceed one plant) size on the people without reliable water, capped at one plant
 function targetDemand(ctx,dem,wp){
   const many=dem.popCity||(wp&&wp.pop>CAP_PEOPLE)||(dem.pop>CAP_PEOPLE);
@@ -1465,6 +1465,43 @@ async function adSalinityDB(lat,lon,r){
   }catch(e){fail(c,e);return {};}
 }
 
+// ---------- microgrid key figures (70% and 90% solar share) ----------
+function adMicrogrid(ctx){
+  const h=ctx.hyb,b=ctx.best;if(!h||!b)return;
+  const c=card('mg','Microgrid — key figures','energy');
+  const E=b.E,load=E/24,peak=load*1.2,sol=ctx.solar||{};
+  const row=x=>{const yieldYr=x.pv*(sol.ann||0)*0.75*365/1000;return {...x,yieldYr,pvInv:x.pv/1.25,pcs:peak,batPow:load,autonomy:x.batt*0.9*0.9/load,genHrs:(1-x.share)*24,tank7:x.fuelL*7};};
+  const A=row(h.h70),B=row(h.h90);
+  setStatus(c,`${fmt(load,0)} kW load · ${fmt(A.pv,0)}–${fmt(B.pv,0)} kWp`,'ok');
+  const L=(lbl,f,u)=>`<tr><td>${lbl}</td><td class="num">${f(A)}</td><td class="num">${f(B)}</td><td>${u}</td></tr>`;
+  html(c,`<div class="tbl"><table><thead><tr><th></th><th class="num">70% solar</th><th class="num">90% solar</th><th></th></tr></thead><tbody>
+    <tr><td colspan="4"><b>Load</b> — ${esc(b.src.split(' (')[0].split(' — ')[0])}, ${fmt(ctx.Q,0)} m³/d × ${fmt(b.sec,1)} kWh/m³</td></tr>
+    ${L('Daily energy',()=>fmt(E/1000,E<10000?2:1),'MWh/day')}
+    ${L('Continuous load (RO 24 h)',()=>fmt(load,0),'kW')}
+    ${L('Peak load (×1.2: pump starts, variations)',()=>fmt(peak,0),'kW')}
+    <tr><td colspan="4"><b>Solar PV</b></td></tr>
+    ${L('PV array',x=>fmt(x.pv,0),'kWp')}
+    ${L('PV inverters (DC/AC 1.25)',x=>fmt(x.pvInv,0),'kWac')}
+    ${L('Annual solar yield',x=>fmt(x.yieldYr,0),'MWh/year')}
+    ${L('Land (PV + plant + storage)',x=>fmt(x.landHa,2),'ha')}
+    <tr><td colspan="4"><b>Battery</b></td></tr>
+    ${L('Battery energy',x=>fmt(x.batt,0),'kWh')}
+    ${L('Battery power / PCS',x=>fmt(x.pcs,0),'kW')}
+    ${L('Night autonomy at full load',x=>fmt(x.autonomy,1),'h')}
+    <tr><td colspan="4"><b>Generator</b></td></tr>
+    ${L('Generator',x=>fmt(x.gen,0),'kVA')}
+    ${L('Average running',x=>fmt(x.genHrs,1),'h/day')}
+    ${L('Diesel',x=>fmt(x.fuelL,0),'L/day')}
+    ${L('Diesel per year',x=>fmt(x.fuelL*365,0),'L/year')}
+    ${L('Fuel tank for 7 days',x=>fmt(x.tank7,0),'L')}
+    <tr><td colspan="4"><b>Energy mix</b></td></tr>
+    ${L('Solar (direct + via battery)',x=>Math.round(x.share*100)+'%','of energy')}
+    ${L('Generator',x=>Math.round((1-x.share)*100)+'%','of energy')}
+  </tbody></table></div>
+  <div class="hint">First-pass screening figures (±20–30%): year-average sun ${fmt(sol.ann,1)} kWh/m²/d, performance ratio 0.75, battery 90% round-trip and depth of discharge, diesel 0.28 L/kWh. ${ctx.grid&&ctx.grid.label?'Grid: '+esc(ctx.grid.label)+'. ':''}Confirm with an hourly simulation (HOMER, SAM or PVGIS) before quoting.</div>`);
+  src(c,'AquaScout sizing model; sun from NASA POWER','https://power.larc.nasa.gov/');
+}
+
 // ---------- alternatives to a new desalination plant: be honest when something cheaper exists ----------
 function adAlternatives(ctx){
   const c=card('alts','Alternatives to a new plant','energy');
@@ -1612,7 +1649,7 @@ async function scan(lat,lon){
     ctx.localNeed=adLocalNeed(ctx,osm,dem);
     {const t=targetDemand(ctx,dem,wp);if(t){ctx.target=t;ctx.pop=t.target;ctx.Q=t.target*LPCD*LOSS/1000;ctx.assumed=false;ctx.popSrc='people without reliable water (est.)';
       const c=cards.demand;if(c){setStatus(c,`${fmt(t.target,0)} people without reliable water (est.)`,'ok');
-        html(c,`<div class="note"><b>Sizing basis: people without reliable water.</b> ~${fmt(t.base,0)} residents (${esc(t.baseSrc)}) × ${fmt(t.lo,0)}–${fmt(t.hi,0)}% lacking basic or reliable water = <b>~${fmt(t.peopleLo,0)}–${fmt(t.peopleHi,0)} people</b>${t.def?` (upper bound from the documented deficit: ${esc(t.defNote||t.def+'% of demand unmet')})`:t.crisis?' (a documented shortage means the real figure is likely higher)':''}. The plant is sized for <b>${fmt(t.target,0)}</b> people (${fmt(ctx.Q,0)} m³/d)${t.capped?` — capped at one plant's maximum of ${fmt(PLANT_MAX_M3D,0)} m³/d`:''}.${t.plants>1?` Covering the upper estimate would take about <b>${t.plants} plants</b>.`:''}<div class="hint">Plant ceiling ${fmt(PLANT_MAX_M3D,0)} m³/d is the seawater figure of the planned system; ceilings for brackish and river water are not set yet, so the same value is used. Shares are the local access gap plus the national continuity gap for this settlement type (JMP); the range runs from overlap (low) to no overlap (high), or to the documented city deficit where one is on record. Enter a population above to size for a specific customer instead.</div></div>`);}}}
+        html(c,`<div class="note"><b>Sizing basis: people without reliable water.</b> ~${fmt(t.base,0)} residents (${esc(t.baseSrc)}) × ${fmt(t.lo,0)}–${fmt(t.hi,0)}% lacking basic or reliable water = <b>~${fmt(t.peopleLo,0)}–${fmt(t.peopleHi,0)} people</b>${t.def?` (upper bound from the documented deficit: ${esc(t.defNote||t.def+'% of demand unmet')})`:t.crisis?' (a documented shortage means the real figure is likely higher)':''}. The plant is sized for <b>${fmt(t.target,0)}</b> people (${fmt(ctx.Q,0)} m³/d)${t.capped?` — capped at one plant's maximum of ${fmt(PLANT_MAX_M3D,0)} m³/d`:''}.${t.plants>1?` Covering the upper estimate would take about <b>${t.plants} plants</b>.`:''}<div class="hint">Plant ceiling ${fmt(PLANT_MAX_M3D,0)} m³/d (1 million US gal/day) is the maximum of the planned system, used for every water source. Shares are the local access gap plus the national continuity gap for this settlement type (JMP); the range runs from overlap (low) to no overlap (high), or to the documented city deficit where one is on record. Enter a population above to size for a specific customer instead.</div></div>`);}}}
     if(!ctx.grid)gridP.then(async g=>{ctx.grid=g;gridStrategy(ctx);if(cards.localneed){cards.localneed.el.remove();delete cards.localneed;}ctx.localNeed=adLocalNeed(ctx,osm,dem);if(cards.econ){cards.econ.el.remove();delete cards.econ;}await adEconomics(ctx);renderBrief(ctx);});
     if(nat.wellsAdd)ctx.wells+=nat.wellsAdd;
     ctx.wwtp=coverage.some(x=>/Wastewater treatment \((OSM|EPA|ANA)\)/.test(x.topic)&&x.state==='ok')||!!(hw&&hw.n);ctx.hw=hw;
@@ -1620,6 +1657,7 @@ async function scan(lat,lon){
     if(ctx.gwTDS==null&&salDB.gwTDS!=null){ctx.gwTDS=salDB.gwTDS;ctx.gwTDSsrc='global salinity DB';}
     if(ctx.swTDS==null&&salDB.swTDS!=null){ctx.swTDS=salDB.swTDS;ctx.swTDSsrc='global salinity DB';}
     adFeedOptions(ctx);
+    adMicrogrid(ctx);
     adAlternatives(ctx);
     if(stopCtl.stopped)throw new Error('stopped');
     await adEconomics(ctx);
