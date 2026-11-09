@@ -159,6 +159,7 @@ section.card.closed>.body{display:none}
 .why{border-left:4px solid var(--bad);background:color-mix(in srgb,var(--bad) 10%,transparent);border-radius:6px;padding:8px 10px;margin:4px 0 8px;line-height:1.45}
 .why .hint{margin-top:4px}
 .pulse{animation:pulse 1.2s ease-in-out infinite}@keyframes pulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--info) 55%,transparent)}50%{box-shadow:0 0 0 6px transparent}}
+.stop{background:var(--bad)!important;border-color:var(--bad)!important}
 .note{border-left:4px solid var(--line);background:color-mix(in srgb,var(--muted) 8%,transparent);border-radius:6px;padding:8px 10px;margin:4px 0 8px;line-height:1.45}
 .card.alert{border-color:var(--bad);box-shadow:inset 4px 0 0 var(--bad)}
 .dotc{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle;background:var(--muted)}
@@ -234,7 +235,9 @@ const fmt=(n,d=1)=>n==null||isNaN(n)?'–':Number(n).toLocaleString(undefined,{m
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const km=(a,b)=>{const R=6371,dLat=(b[0]-a[0])*Math.PI/180,dLon=(b[1]-a[1])*Math.PI/180,la1=a[0]*Math.PI/180,la2=b[0]*Math.PI/180;const h=Math.sin(dLat/2)**2+Math.cos(la1)*Math.cos(la2)*Math.sin(dLon/2)**2;return 2*R*Math.asin(Math.sqrt(h));};
 function bbox(lat,lon,r){const dLat=r/111,dLon=r/(111*Math.cos(lat*Math.PI/180));return [lon-dLon,lat-dLat,lon+dLon,lat+dLat];}
-async function getJSON(url,opt={}){const ms=opt.timeout||25000;const timeout=new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout after '+ms/1000+'s')),ms));const work=(async()=>{const r=await fetch(url);if(!r.ok)throw new Error('HTTP '+r.status);return opt.text?await r.text():await r.json();})();return Promise.race([work,timeout]);}
+let stopCtl=null;const stopRace=()=>stopCtl?[stopCtl.p]:[];
+function newStop(){let rej;const p=new Promise((_,r)=>rej=r);p.catch(()=>{});const ac=new AbortController();stopCtl={p,ac,stopped:false,stop(){if(this.stopped)return;this.stopped=true;ac.abort();rej(new Error('stopped'));}};return stopCtl;}
+async function getJSON(url,opt={}){const ms=opt.timeout||25000;const timeout=new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout after '+ms/1000+'s')),ms));const work=(async()=>{if(stopCtl&&stopCtl.stopped)throw new Error('stopped');const r=await fetch(url,stopCtl?{signal:stopCtl.ac.signal}:{});if(!r.ok)throw new Error('HTTP '+r.status);return opt.text?await r.text():await r.json();})();return Promise.race([work,timeout,...stopRace()]);}
 function parseCSV(text){const rows=[];let row=[],f='',q=false;for(let i=0;i<text.length;i++){const ch=text[i];if(q){if(ch=='"'){if(text[i+1]=='"'){f+='"';i++;}else q=false;}else f+=ch;}else{if(ch=='"')q=true;else if(ch==','){row.push(f);f='';}else if(ch=='\n'){row.push(f);rows.push(row);row=[];f='';}else if(ch!='\r')f+=ch;}}if(f||row.length){row.push(f);rows.push(row);}const h=rows.shift()||[];return rows.filter(r=>r.length>1).map(r=>Object.fromEntries(h.map((k,i)=>[k,r[i]])));}
 // salinity sets cost and energy, not feasibility: every class is a workable RO feed, so all show green (the label carries the difference)
 function classifyTDS(mgl){if(mgl==null)return null;if(mgl<1000)return{c:'fresh',l:'Fresh (<1 g/L)',cls:'ok'};if(mgl<3000)return{c:'brackish',l:'Slightly brackish (1–3 g/L)',cls:'ok'};if(mgl<10000)return{c:'brackish',l:'Brackish (3–10 g/L)',cls:'ok'};if(mgl<30000)return{c:'saline',l:'Highly saline (10–30 g/L)',cls:'ok'};return{c:'sea',l:'Seawater (>30 g/L)',cls:'ok'};}
@@ -278,7 +281,7 @@ function setHash(lat,lon){const r=+$('#radius').value||10,pp=+$('#pop').value||0
 function fromHash(){const m=(location.hash||'').slice(1).split(',').map(Number);if(m.length>=2&&!isNaN(m[0])&&!isNaN(m[1])){if(m[2]>0)$('#radius').value=m[2];if(m[3]>0)$('#pop').value=m[3];map.setView([m[0],m[1]],11);scan(m[0],m[1]);return true;}return false;}
 window.addEventListener('load',()=>setTimeout(fromHash,300));
 function briefText(ctx){const t=[...document.querySelectorAll('.brief .kpi > div')].map(d=>d.querySelector('.l').textContent+': '+d.querySelector('.v').textContent.replace(/\s+/g,' ').trim()+' ('+d.querySelector('.n').textContent.trim()+')');const v=document.querySelector('.brief .verdict')?.innerText||'';const h=document.querySelector('.brief .place')?.innerText+' — '+document.querySelector('.brief .sub')?.innerText;return `AquaScout brief\n${h}\n\n${t.join('\n')}\n\n${v}\n\n${location.href}`;}
-$('#go').addEventListener('click',async()=>{const q=$('#q').value.trim();if(!q)return;const m=q.match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);if(m){map.setView([+m[1],+m[2]],11);return scan(+m[1],+m[2]);}try{const r=await getJSON('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+encodeURIComponent(q));if(r[0]){map.setView([+r[0].lat,+r[0].lon],11);scan(+r[0].lat,+r[0].lon);}else alert('Place not found');}catch(e){alert('Geocoder error: '+e.message);}});
+$('#go').addEventListener('click',async()=>{if(running){if(stopCtl)stopCtl.stop();return;}const q=$('#q').value.trim();if(!q)return;const m=q.match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);if(m){map.setView([+m[1],+m[2]],11);return scan(+m[1],+m[2]);}try{const r=await getJSON('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+encodeURIComponent(q));if(r[0]){map.setView([+r[0].lat,+r[0].lon],11);scan(+r[0].lat,+r[0].lon);}else alert('Place not found');}catch(e){alert('Geocoder error: '+e.message);}});
 $('#q').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();$('#go').click();}});
 $('#pop').addEventListener('keydown',e=>{if(e.key!=='Enter')return;if($('#q').value.trim())$('#go').click();else if(marker){const p=marker.getLatLng();scan(p.lat,p.lng);}});
 
@@ -550,7 +553,7 @@ function card(id,title,group='sources',opts={}){const g=groupEl[group]||dossier;
 function setStatus(c,txt,cls){c.st.textContent=txt;c.st.className='st '+(cls||'');c.el.classList.remove('loading');progress(c.id,cls==='bad'?'err':'done');}
 function src(c,label,url){const p=document.createElement('div');p.className='src';p.innerHTML=url?`Source: <a href="${esc(url)}" target="_blank" rel="noopener">${esc(label)}</a>`:'Source: '+esc(label);c.body.appendChild(p);}
 function html(c,h){const d=document.createElement('div');d.innerHTML=h;c.body.appendChild(d);}
-function fail(c,e,label){setStatus(c,'error','bad');c.el.classList.remove('closed');html(c,`<div class="err">${esc(label||'')} ${esc(e.message||e)}${RETRY[c.id]&&lastScan?` <a href="#" class="retry" data-id="${esc(c.id)}">retry this source</a>`:''}</div>`);
+function fail(c,e,label){if(stopCtl&&stopCtl.stopped){setStatus(c,'stopped','');progress(c.id,'done');return;}setStatus(c,'error','bad');c.el.classList.remove('closed');html(c,`<div class="err">${esc(label||'')} ${esc(e.message||e)}${RETRY[c.id]&&lastScan?` <a href="#" class="retry" data-id="${esc(c.id)}">retry this source</a>`:''}</div>`);
   const a=c.body.querySelector('a.retry[data-id="'+c.id+'"]');if(a)a.addEventListener('click',ev=>{ev.preventDefault();retryCard(c.id);});}
 let lastScan=null;
 const RETRY={osm:()=>adOSM(lastScan.lat,lastScan.lon,lastScan.r),grid:()=>adGrid(lastScan.lat,lastScan.lon,lastScan.r,lastScan.cc,lastScan.loc),solar:()=>adSolar(lastScan.lat,lastScan.lon),flow:()=>adRiverFlow(lastScan.lat,lastScan.lon),usgs:()=>adUSGS(lastScan.lat,lastScan.lon,lastScan.r),wqp:()=>adWQP(lastScan.lat,lastScan.lon,lastScan.r),util:()=>adEPAUtility(lastScan.lat,lastScan.lon),echo:()=>adECHO(lastScan.lat,lastScan.lon,lastScan.r),hubeau:()=>adHubeau(lastScan.lat,lastScan.lon,lastScan.r),whymap:()=>adGlobalGW(lastScan.lat,lastScan.lon),need:()=>adNeed(countryA3(lastScan.cc),lastScan.cc,lastScan.loc),desal:()=>adDesalNearby(lastScan.lat,lastScan.lon),wpdx:()=>adWPdx(lastScan.lat,lastScan.lon,lastScan.r),bgs:()=>adAfricaGW(lastScan.lat,lastScan.lon)};
@@ -635,7 +638,7 @@ async function adRiverFlow(lat,lon){
 
 // ---------- AquaScout cache (Supabase PostGIS, refreshed weekly from Geofabrik by GitHub Actions) ----------
 const SB_URL='https://ldppoxultszthlrfdmcv.supabase.co',SB_KEY='sb_publishable_nBETDrf8J39fHN_I-CDR9A_C4BzpuF2';
-async function sbRpc(fn,args,timeout=20000){const r=await Promise.race([fetch(`${SB_URL}/rest/v1/rpc/${fn}`,{method:'POST',headers:{'Content-Type':'application/json',apikey:SB_KEY,Authorization:'Bearer '+SB_KEY},body:JSON.stringify(args)}),new Promise((_,rej)=>setTimeout(()=>rej(new Error('cache timeout')),timeout))]);if(!r.ok)throw new Error('cache HTTP '+r.status);return r.json();}
+async function sbRpc(fn,args,timeout=20000){const r=await Promise.race([fetch(`${SB_URL}/rest/v1/rpc/${fn}`,{method:'POST',headers:{'Content-Type':'application/json',apikey:SB_KEY,Authorization:'Bearer '+SB_KEY},body:JSON.stringify(args),...(stopCtl?{signal:stopCtl.ac.signal}:{})}),new Promise((_,rej)=>setTimeout(()=>rej(new Error('cache timeout')),timeout)),...stopRace()]);if(!r.ok)throw new Error('cache HTTP '+r.status);return r.json();}
 let cacheCoverPromise={};
 async function cacheCovered(lat,lon){const k=lat.toFixed(2)+','+lon.toFixed(2);if(!cacheCoverPromise[k])cacheCoverPromise[k]=sbRpc('osm_covered',{lat,lon}).then(rows=>rows&&rows.length?rows[0]:null).catch(()=>null);return cacheCoverPromise[k];}
 // Convert cached rows into Overpass-like elements so the existing parsers work unchanged
@@ -1475,7 +1478,7 @@ async function runNational(cc,lat,lon,r,loc){
 // ---------- orchestrator ----------
 let running=false;
 async function scan(lat,lon){
-  if(running)return;running=true;
+  if(running)return;running=true;newStop();$('#go').textContent='Stop';$('#go').classList.add('stop');
   const r=Math.min(50,Math.max(1,+$('#radius').value||10));setHash(lat,lon);
   layerGroup.clearLayers();if(marker)map.removeLayer(marker);if(circle)map.removeLayer(circle);if(pick){map.removeLayer(pick);pick=null;}$('#go').classList.remove('pulse');
   marker=L.marker([lat,lon]).addTo(map);circle=L.circle([lat,lon],{radius:r*1000,color:'#0f6f86',weight:1,fillOpacity:.04}).addTo(map);
@@ -1499,7 +1502,8 @@ async function scan(lat,lon){
     ctx.comp=(await loadComp())[a3]||null;
     ctx.crisis=(await loadCrises()).map(x=>({...x,d:km([lat,lon],[x.lat,x.lon])})).filter(x=>x.d<=x.radius_km).sort((a,b)=>(a.severity==='severe'?0:1)-(b.severity==='severe'?0:1)||a.d-b.d)[0]||null;
     {const isl=await islP;if(isl&&isl.area<50){const inside=(ctx.ds?.all||[]).filter(p=>isl.rings.some(rg=>pipRing(p.lo,p.la,rg)));if(!inside.length&&!ctx.utility)ctx.smallCay={name:isl.name,area:isl.area};}}
-    ctx.grid=await Promise.race([gridP,new Promise(r=>setTimeout(()=>r(null),40000))]);
+    ctx.grid=await Promise.race([gridP,new Promise(r=>setTimeout(()=>r(null),40000)),stopCtl.p.catch(()=>null)]);
+    if(stopCtl.stopped)throw new Error('stopped');
     ctx.localNeed=adLocalNeed(ctx,osm,dem);
     if(!ctx.grid)gridP.then(async g=>{ctx.grid=g;gridStrategy(ctx);if(cards.localneed){cards.localneed.el.remove();delete cards.localneed;}ctx.localNeed=adLocalNeed(ctx,osm,dem);if(cards.econ){cards.econ.el.remove();delete cards.econ;}await adEconomics(ctx);renderBrief(ctx);});
     if(nat.wellsAdd)ctx.wells+=nat.wellsAdd;
@@ -1509,13 +1513,15 @@ async function scan(lat,lon){
     if(ctx.swTDS==null&&salDB.swTDS!=null){ctx.swTDS=salDB.swTDS;ctx.swTDSsrc='global salinity DB';}
     adFeedOptions(ctx);
     adAlternatives(ctx);
+    if(stopCtl.stopped)throw new Error('stopped');
     await adEconomics(ctx);
+    if(stopCtl.stopped)throw new Error('stopped');
     adCoverage();
     renderBrief(ctx);
     scanDone();
     dossier.scrollTop=0;
-  }catch(e){const d=document.createElement('div');d.className='err';d.textContent='Scan failed: '+e.message;dossier.appendChild(d);scanDone();}
-  running=false;
+  }catch(e){const d=document.createElement('div');d.className=e.message==='stopped'?'note':'err';d.textContent=e.message==='stopped'?'Scan stopped — partial results above. Press Scan to run it again.':'Scan failed: '+e.message;if(e.message==='stopped'){const t=progressEl&&progressEl.querySelector('.hd span');if(t)t.textContent='Scan stopped';}dossier.appendChild(d);scanDone();}
+  running=false;$('#go').textContent='Scan';$('#go').classList.remove('stop');
 }
 </script>
 </body>
