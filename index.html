@@ -107,7 +107,7 @@ section.card.loading>.body::before{content:"Fetching from source…";display:blo
 .lg-tog:focus-visible{outline:2px solid var(--accent,#2f6fb0);outline-offset:2px;border-radius:3px}
 .lg-car{font-size:11px;color:var(--muted);transition:transform .15s}
 .lg-body{display:flex;flex-direction:column;gap:2px;margin-top:4px}
-.poplg{background:var(--bg);padding:6px 8px;border-radius:8px;font-size:11px;max-width:150px}.poplg i{display:inline-block;width:12px;height:10px;margin-right:5px;vertical-align:middle;border:1px solid #0002}
+.poplg{padding-bottom:4px;margin-bottom:4px;border-bottom:1px solid var(--line)}.popsw{display:flex;flex-wrap:wrap;gap:2px 8px}.poplg i{display:inline-block;width:12px;height:10px;margin-right:5px;vertical-align:middle;border:1px solid #0002}
 .lg-collapsed .lg-body{display:none}
 .lg-collapsed .lg-car{transform:rotate(-90deg)}
 .lg-collapsed{padding:4px 8px!important}
@@ -267,8 +267,9 @@ const PopLayer=L.TileLayer.extend({getTileUrl(c){const n=2**c.z,W=20037508.34278
   const svc=c.z>=11?'WorldPop_Population_Density_100m':'WorldPop_Population_Density_1km';
   return `https://worldpop.arcgis.com/arcgis/rest/services/${svc}/ImageServer/exportImage?bbox=${x0},${y1-s},${x0+s},${y1}&bboxSR=3857&imageSR=3857&size=256,256&format=png32&transparent=true&time=1577836800000&f=image&renderingRule=${encodeURIComponent(POP_RR)}`;}});
 const popLayer=new PopLayer('',{opacity:.65,maxZoom:18,attribution:'Population: WorldPop 2020 (CC-BY 4.0) via Esri'});
-const popLegend=L.control({position:'topleft'});popLegend.onAdd=()=>{const d=L.DomUtil.create('div','legend poplg');d.innerHTML='<b>People / km² (WorldPop 2020)</b><div class="lg-body">'+POP_CLASSES.map(c=>`<span><i style="background:${c[2]}"></i>${c[0]>=1000?(c[0]/1000)+'k':c[0]}${c[1]<1e6?'–'+(c[1]>=1000?(c[1]/1000)+'k':c[1]):'+'}</span>`).join('')+'</div>';return d;};
-map.on('overlayadd',e=>{if(e.layer===popLayer)popLegend.addTo(map);});map.on('overlayremove',e=>{if(e.layer===popLayer)popLegend.remove();});
+function popLegendHTML(){return '<div class="poplg"><b>People / km² (WorldPop 2020)</b><div class="popsw">'+POP_CLASSES.map(c=>`<span><i style="background:${c[2]}"></i>${c[0]>=1000?(c[0]/1000)+'k':c[0]}${c[1]<1e6?'–'+(c[1]>=1000?(c[1]/1000)+'k':c[1]):'+'}</span>`).join('')+'</div></div>';}
+function showPopLegend(on){const body=document.querySelector('#maplegend .lg-body');if(!body)return;const old=body.querySelector('.poplg');if(old)old.remove();if(on){body.insertAdjacentHTML('afterbegin',popLegendHTML());document.querySelector('#maplegend').classList.remove('lg-collapsed');}}
+map.on('layeradd',e=>{if(e.layer===popLayer)showPopLegend(true);});map.on('layerremove',e=>{if(e.layer===popLayer)showPopLegend(false);});
 const ctl=L.control.layers({'Streets (OpenStreetMap)':baseOSM,'Satellite (Esri imagery + labels)':baseSat,'Terrain (OpenTopoMap)':baseTopo,'Light grey (Esri) — best for choropleths':baseLight},{'Population density (WorldPop 2020)':popLayer,'Surface water occurrence (JRC)':gsw,'Bathymetry (GEBCO)':gebco,'Groundwater resources & saline areas (WHYMAP)':whymap,'Africa: groundwater conductivity (BGS atlas)':bgsSEC,'Africa: depth to groundwater (BGS atlas)':bgsDepth},{collapsed:true,position:'topright'}).addTo(map);
 let marker,circle,layerGroup=L.layerGroup().addTo(map);
 const colors={sea:'#2c5e8a',brackish:'#4f8a8b',fresh:'#2f8f5b',waste:'#7a5a3a'};
