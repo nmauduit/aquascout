@@ -1373,16 +1373,28 @@ function adFeedOptions(ctx){
   const c=card('feed','Feed-water candidates & first-order sizing','energy');
   const Q=ctx.Q||0;const psh=ctx.solar?.worst||null;
   const cands=[];
-  // seawater: reference SWRO design (750,000 US gal/d = 2,839 m³/d, 8,183 kWh/d, 24 h, Danfoss iSave energy recovery) = 2.9 kWh/m³ for intake pump → RO → post-treatment, + 0.3 for delivery pumping and buildings
-  const SEC_SW=3.2;
-  if(ctx.coast)cands.push({src:'Seawater (coastline within radius)',tds:35000,sec:SEC_SW});
-  const secFor=t=>t<1000?0.6:t<3000?1.6:t<10000?2.8:t<30000?4:5;
-  if(ctx.gwTDS!=null)cands.push({src:'Groundwater — wells sampled nearby (median'+(ctx.gwTDSsrc?', '+ctx.gwTDSsrc:'')+')',tds:ctx.gwTDS,sec:secFor(ctx.gwTDS)+0.2});
-  if(ctx.swTDS!=null)cands.push({src:'Surface water — streams sampled nearby (median'+(ctx.swTDSsrc?', '+ctx.swTDSsrc:'')+')',tds:ctx.swTDS,sec:secFor(ctx.swTDS)});
-  if(ctx.tds!=null){const t=ctx.tds;cands.push({src:ctx.tdsLabel||'Local groundwater / surface (sampled median)',tds:t,sec:t<1000?0.6:t<3000?1.6:t<10000?2.8:t<30000?4:5});}
-  if(ctx.salineArea&&ctx.tds==null&&ctx.gwTDS==null)cands.push({src:'Regional groundwater — WHYMAP maps this as a saline area (>5 g/L); assume brackish-to-saline until tested',tds:8000,sec:2.8});
+  // Whole-plant energy, one basis for every source (kWh per m³ produced):
+  // source pumping + pre-treatment + RO/treatment + post-treatment + delivery (0.3). Seawater stages from the reference SWRO design
+  // (750,000 US gal/d = 2,839 m³/d, 8,183 kWh/d, 24 h, Danfoss iSave): intake 0.6, RO 2.1, post 0.15; + pre-treatment 0.2 + delivery 0.3 + margin 0.15 = 3.5.
+  // Wells: 50 m lift ≈ 0.004 kWh/m³ per m ÷ recovery. Brine disposal inland not included.
+  const secParts=(kind,t)=>{const D=0.3;let p;
+    if(kind==='sea'||(t!=null&&t>=30000))p={source:kind==='sea'?0.6:kind==='well'?0.45:0.2,pre:0.2,ro:2.1,post:0.15,del:D,margin:0.15};
+    else if(kind==='urban')p={source:0.1,pre:0.3,ro:0.5,post:0.05,del:D};
+    else if(kind==='reuse')p={source:0.1,pre:0.4,ro:0.8,post:0.1,del:D};
+    else{const well=kind==='well';
+      if(t<1000)p=well?{source:0.25,pre:0.05,ro:0,post:0.05,del:D}:{source:0.1,pre:0.25,ro:0,post:0.05,del:D};
+      else if(t<3000)p={source:well?0.25:0.1,pre:0.05,ro:0.5,post:0.1,del:D};
+      else if(t<10000)p={source:well?0.25:0.1,pre:0.05,ro:0.9,post:0.1,del:D};
+      else p={source:well?0.35:0.13,pre:0.1,ro:1.8,post:0.1,del:D};}
+    p.total=Math.round(Object.values(p).reduce((a,b)=>a+b,0)*10)/10;return p;};
+  const mk=(kind,t)=>{const p=secParts(kind,t);return {sec:p.total,parts:p};};
+  if(ctx.coast)cands.push({src:'Seawater (coastline within radius)',tds:35000,...mk('sea',35000)});
+  if(ctx.gwTDS!=null)cands.push({src:'Groundwater — wells sampled nearby (median'+(ctx.gwTDSsrc?', '+ctx.gwTDSsrc:'')+')',tds:ctx.gwTDS,...mk('well',ctx.gwTDS)});
+  if(ctx.swTDS!=null)cands.push({src:'Surface water — streams sampled nearby (median'+(ctx.swTDSsrc?', '+ctx.swTDSsrc:'')+')',tds:ctx.swTDS,...mk('surface',ctx.swTDS)});
+  if(ctx.tds!=null){const t=ctx.tds;cands.push({src:ctx.tdsLabel||'Local groundwater / surface (sampled median)',tds:t,...mk(/ground|well|pozo|aquif|forage|nappe/i.test(ctx.tdsLabel||'')?'well':'surface',t)});}
+  if(ctx.salineArea&&ctx.tds==null&&ctx.gwTDS==null)cands.push({src:'Regional groundwater — WHYMAP maps this as a saline area (>5 g/L); assume brackish-to-saline until tested',tds:8000,...mk('well',8000)});
   if(ctx.wells&&ctx.tds==null&&ctx.gwTDS==null)cands.push({src:`Mapped wells (${ctx.wells}) — salinity unknown`,tds:null,sec:null});
-  if(ctx.wwtp)cands.push({src:'Treated wastewater (reuse)',tds:1000,sec:1.8});
+  if(ctx.wwtp)cands.push({src:'Treated wastewater (reuse)',tds:1000,...mk('reuse',1000)});
   // a perennial river within the radius is usually fresh: conventional treatment, no RO. Salinity is not sampled, so it is flagged as an assumption.
   const fl=ctx.flow;ctx.riverOpt=null;
   if(fl&&ctx.rivers>0&&(fl.mean??fl.last)>=0.5){const ref=fl.mean??fl.last,low=fl.hist?fl.hist.q10:fl.min;const need=Q?Q/86400:0;const share=need/Math.max(0.001,low);
@@ -1391,7 +1403,7 @@ function adFeedOptions(ctx){
     ctx.riverOpt={mean:ref,low,share,seasonal:fl.seasonal,small:fl.small,urban,tidal,yearRound,hist:!!fl.hist};
     const notes=[fl.hist?`dry-season ${fmt(low,2)} m³/s`:`last-30-day low ${fmt(low,1)} m³/s (no history)`];
     if(fl.small)notes.push('small river, model unreliable');if(urban)notes.push('urban river: sewage likely, full treatment needed');if(tidal)notes.push('intake must be upstream of the tidal reach');
-    if(yearRound)cands.push({src:`River within radius — GloFAS ~${fmt(ref,1)} m³/s mean; ${notes.join('; ')}; salinity not sampled (assumed fresh)`,tds:300,sec:urban?1.0:0.4,assumed:true,doubtful:fl.small||urban});
+    if(yearRound)cands.push({src:`River within radius — GloFAS ~${fmt(ref,1)} m³/s mean; ${notes.join('; ')}; salinity not sampled (assumed fresh)`,tds:300,...mk(urban?'urban':'surface',300),assumed:true,doubtful:fl.small||urban});
     else cands.push({src:`River within radius — ${fl.seasonal?'strongly seasonal':'too small for this demand in the dry season'} (${notes.join('; ')}); not a year-round source`,tds:null,sec:null});}
   if(!cands.length)cands.push({src:'No feed-water source identified in open data',tds:null,sec:null});
   const rows=cands.map(k=>{const E=k.sec!=null&&Q?Q*k.sec:null;const pv=E&&psh?E/(psh*0.75):null;const cl=classifyTDS(k.tds);return{...k,E,pv,cl,batt:pv?Math.round(pv*0.8*1.5):null,gen:pv?Math.ceil(pv*0.8*1.25/5)*5:null,land:pv?Math.round(pv*7.5+Q*0.4+Q*2):null};});
@@ -1404,11 +1416,11 @@ function adFeedOptions(ctx){
     // headline sizing = 70% solar hybrid
     Object.assign(ctx.best,{pv:h70.pv,batt:h70.batt,gen:h70.gen,land:Math.round(h70.landHa*10000)});
     const dsl=ctx.dieselGuess||1.2;
-    html(c,`<div class="note"><b>Power required:</b> <b>${fmt(ctx.best.E/24,0)} kW</b> continuous (RO runs 24 h/day) · ${fmt(ctx.best.E/1000,ctx.best.E<10000?2:1)} MWh/day (${fmt(ctx.best.sec,1)} kWh/m³ × ${fmt(Q,0)} m³/d)</div>`);
+    html(c,`<div class="note"><b>Energy basis (${esc(ctx.best.src.split(' (')[0].split(' — ')[0])}):</b> ${ctx.best.parts?Object.entries({source:'source pumping',pre:'pre-treatment',ro:'RO / treatment',post:'post-treatment',del:'delivery',margin:'margin'}).filter(([k])=>ctx.best.parts[k]).map(([k,l])=>`${l} ${fmt(ctx.best.parts[k],2)}`).join(' + ')+` = <b>${fmt(ctx.best.parts.total,1)} kWh/m³</b>`:fmt(ctx.best.sec,1)+' kWh/m³'}${ctx.best.src.startsWith('Seawater')?' (stages from the reference 2,839 m³/d SWRO design)':/Groundwater|well/i.test(ctx.best.src)?' (50 m well lift assumed)':''}. Brine disposal inland not included.<br><b>Power required:</b> <b>${fmt(ctx.best.E/24,0)} kW</b> continuous (RO runs 24 h/day) · ${fmt(ctx.best.E/1000,ctx.best.E<10000?2:1)} MWh/day (${fmt(ctx.best.sec,1)} kWh/m³ × ${fmt(Q,0)} m³/d)</div>`);
     html(c,`<b>Hybrid design options — ${esc(ctx.best.src.split(' (')[0].split(' — ')[0])}</b>`+table([h70,h90],[
       {h:'Solar share',f:h=>`<b>${Math.round(h.share*100)}%</b>`},{h:'PV kWp',num:1,f:h=>fmt(h.pv,0)},{h:'Battery kWh',num:1,f:h=>fmt(h.batt,0)},{h:'Generator kVA',num:1,f:h=>fmt(h.gen,0)},
       {h:'Diesel L/day',num:1,f:h=>fmt(h.fuelL,0)},{h:'Diesel L/year',num:1,f:h=>fmt(h.fuelL*365,0)},{h:'Land ha',num:1,f:h=>fmt(h.landHa,2)}])+
-      `<div class="hint">RO runs 24 h/day (${Q?fmt(h70.roNameplate,0)+' m³/d nameplate':''}); seawater energy 3.2 kWh/m³ = 2.9 from the reference plant design (intake pump, RO with energy recovery, post-treatment) + 0.3 for delivery and buildings; PV runs the daytime load and charges the battery for the evening (≈ ${fmt(h70.batt/Math.max(1,h70.loadKw),1)} h at 70%, ${fmt(h90.batt/Math.max(1,h90.loadKw),1)} h at 90%); the generator covers night and cloudy days. Year-average sun ${fmt(sol.ann,1)} kWh/m²/d, performance ratio 0.75, battery 90% round-trip and depth of discharge, diesel ≈ 0.28 L/kWh. Going from 70% to 90% solar saves ~${fmt((h70.fuelL-h90.fuelL)*365,0)} L of diesel a year for ~${fmt(h90.pv-h70.pv,0)} kWp more PV and ~${fmt(h90.batt-h70.batt,0)} kWh more battery.</div>`);}
+      `<div class="hint">RO runs 24 h/day (${Q?fmt(h70.roNameplate,0)+' m³/d nameplate':''});  PV runs the daytime load and charges the battery for the evening (≈ ${fmt(h70.batt/Math.max(1,h70.loadKw),1)} h at 70%, ${fmt(h90.batt/Math.max(1,h90.loadKw),1)} h at 90%); the generator covers night and cloudy days. Year-average sun ${fmt(sol.ann,1)} kWh/m²/d, performance ratio 0.75, battery 90% round-trip and depth of discharge, diesel ≈ 0.28 L/kWh. Going from 70% to 90% solar saves ~${fmt((h70.fuelL-h90.fuelL)*365,0)} L of diesel a year for ~${fmt(h90.pv-h70.pv,0)} kWp more PV and ~${fmt(h90.batt-h70.batt,0)} kWh more battery.</div>`);}
   gridStrategy(ctx,c);
   html(c,`<div class="hint">Feed comparison table (PV / battery / generator columns): solar-only daytime sizing on worst-month sun (${psh?fmt(psh,2):'?'} kWh/m²/d, PR 0.75), used only to compare sources — the headline design is the 70% hybrid above; land = PV 7.5 m²/kWp + plant 0.4 m²/(m³/d) + 2 days' storage. Inland brackish needs brine evaporation ponds (~60 m² per m³/d of plant) not included. Energy figures include intake and distribution; small-plant penalty not applied.</div>`);
 }
