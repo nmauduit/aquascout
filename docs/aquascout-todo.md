@@ -1,4 +1,4 @@
-# AquaScout — to-do list (updated 2026-11-08 23:55 PT)
+# AquaScout — to-do list (end of day 2026-11-08)
 
 Live: https://nmauduit.github.io/aquascout/ · Repo: github.com/nmauduit/aquascout
 
@@ -6,7 +6,8 @@ Live: https://nmauduit.github.io/aquascout/ · Repo: github.com/nmauduit/aquasco
 
 ## A. Your actions
 - [ ] Confirm the plant's maximum output for brackish water and for river/fresh water (seawater = 5,000 m³/d).
-- [ ] Test location #2 and send screenshots of anything wrong, surprising or missing (location #1 Exuma / Torch Cay done).
+- [ ] Test more locations and send screenshots of anything wrong, surprising or missing (done: #1 Exuma / Torch Cay, #2 Santa Marta).
+- [ ] Optional: ask 2–3 suppliers for a quote on 3–4 SWRO containers totalling 5,000 m³/d (with UF pre-treatment, energy recovery, variable-flow operation) — lets us calibrate costs.
 
 ## B. Next build items (suggested order)
 1. **Financing & payback** — water tariff or plant-as-a-service fee, payback, IRR, CAPEX per household.
@@ -21,7 +22,13 @@ Live: https://nmauduit.github.io/aquascout/ · Repo: github.com/nmauduit/aquasco
 10. **Electricity tariffs** with fuel surcharge; SAIDI/SAIFI.
 11. **UI** — ES/FR toggle; "last updated" badges.
 
-## C. Backend
+## C. Business research (project docs, not the app)
+- **Santa Marta market sizing**: count of hotels, hospitals, housing estates; trucked-water prices from the press → realistic number and size of private plants (100–1,000 m³/d each).
+- **Water-as-a-service tariffs**: per-m³ prices in Seven Seas / Consolidated Water contracts (CWCO 10-K, utility regulators).
+- **Watch Santa Marta dates**: priority works 30 Nov 2026, new agreement 31 Dec 2026, regional diagnosis Jan 2027 (possible interim-supply opening).
+- **Suppliers still to check**: Trunz Water Systems, Fraunhofer spin-offs; confirm capacities in the supplier doc section 3.
+
+## D. Backend
 - Supabase 397 / 500 MB — room for about one more OSM region before Pro ($25/month).
 - Pre-bake CORS-blocked rasters (GEBCO); batch-screening RPC.
 
@@ -31,7 +38,7 @@ Live: https://nmauduit.github.io/aquascout/ · Repo: github.com/nmauduit/aquasco
 - [x] **Supplier & competitor reference** in project doc `containerized-solar-ro-suppliers.md` (not in the app).
 - [x] **Target demand in cities / large populations** — residents × share without basic or reliable water (range), capped at one plant (**5,000 m³/d = seawater maximum**; brackish/river ceilings to be confirmed — same value used meanwhile), with the number of plants to cover the upper estimate. Villages and towns below the cap are still sized on the whole community.
 - [x] **River check** — 3 years of daily flow (dry-season low), seasonal / small-stream / urban-sewage / tidal flags; doubtful rivers never become the "best feed"; large rivers 25–100 km away sampled as regional-transfer options.
-- [x] **People count from WorldPop 2020** — residents within 2 km and within the radius; used when OSM has no usable figure; inside a city demand assumes a 2,000-person community.
+- [x] **People count from WorldPop 2020** — residents within 2 km and within the radius; used when OSM has no usable figure (cities: see target demand).
 - [x] **Feed tile** flags assumed river salinity ("fresh?", grey).
 - [x] **Bulk files** — HydroWASTE (58,502 plants) and global salinity (138k cells) in Supabase; gridfinder predicted lines (11,299 static tiles). Jones 2019 not public (proprietary DesalData).
 - [x] **Continuity & safety** — JMP service components (208 countries), rural/urban IRCA, two map layers.
