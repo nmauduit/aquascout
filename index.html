@@ -625,7 +625,7 @@ async function adRiverFlow(lat,lon){
     html(c,`<dl class="kv"><dt>Latest (GloFAS cell)</dt><dd><b>${fmt(last,1)}</b> m³/s</dd><dt>30-day range</dt><dd>${fmt(Math.min(...vals),1)} – ${fmt(Math.max(...vals),1)} m³/s</dd><dt>Climatological mean</dt><dd>${fmt(mean,1)} m³/s</dd></dl><div class="hint">GloFAS v4 at ~5 km: the largest river in the grid cell, not necessarily a stream at this exact point. Use for order-of-magnitude surface-water availability.</div>`);
     src(c,'Open-Meteo Flood API (Copernicus GloFAS)',u);cov('Surface-water quantity','ok','GloFAS modelled discharge');
     return {last,mean,min:Math.min(...vals),max:Math.max(...vals)};
-  }catch(e){fail(c,e);cov('Surface-water quantity','missing',e.message);return null;}
+  }catch(e){if(/no GloFAS cell/.test(e.message)){setStatus(c,'no river at this point','');progress(c.id,'done');html(c,'<div class="hint">The global river model has no river cell here (open sea or a small island) — not an error.</div>');cov('Surface-water quantity','none','no river cell');}else fail(c,e);if(!/no GloFAS cell/.test(e.message))cov('Surface-water quantity','missing',e.message);return null;}
 }
 
 // ---------- AquaScout cache (Supabase PostGIS, refreshed weekly from Geofabrik by GitHub Actions) ----------
