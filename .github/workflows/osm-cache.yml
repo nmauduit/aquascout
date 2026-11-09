@@ -11,7 +11,7 @@ on:
 jobs:
   load:
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    timeout-minutes: 300
     env:
       SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
     steps:
@@ -51,7 +51,8 @@ jobs:
           for R in $REGIONS; do
             SLUG=$(basename "$R")
             echo "=== $R"
-            if ! curl -sSL --retry 4 --retry-delay 20 --connect-timeout 30 --max-time 1200 -o "$SLUG.osm.pbf" "https://download.geofabrik.de/$R-latest.osm.pbf"; then echo "!! download failed for $R — skipping"; FAILED="$FAILED $R"; continue; fi
+            # abort a stalled download (<50 KB/s for 2 min) instead of hanging for hours
+            if ! curl -sSL --retry 2 --retry-delay 30 --connect-timeout 30 --speed-limit 50000 --speed-time 120 --max-time 1500 -o "$SLUG.osm.pbf" "https://download.geofabrik.de/$R-latest.osm.pbf"; then echo "!! download failed for $R — skipping"; FAILED="$FAILED $R"; continue; fi
             ls -la "$SLUG.osm.pbf"
             osmium tags-filter -o water.pbf "$SLUG.osm.pbf" \
               natural=water,coastline,spring waterway=river,canal,stream \
@@ -66,6 +67,7 @@ jobs:
           done
           if [ -n "$FAILED" ]; then echo "Regions that failed to download:$FAILED"; fi
       - name: Reclaim space (VACUUM FULL) and report size
+        if: always()
         run: |
           psql "--dbname=$(echo "$SUPABASE_DB_URL" | xargs)" -c "set statement_timeout = 0" -c "vacuum (full, analyze) osm_feat"
           psql "--dbname=$(echo "$SUPABASE_DB_URL" | xargs)" -tAc "select region||': water '||feat_water||', power '||feat_power from osm_region order by 1; select 'osm_feat on disk: '||pg_size_pretty(pg_total_relation_size('osm_feat'))||' | database: '||pg_size_pretty(pg_database_size(current_database()));"

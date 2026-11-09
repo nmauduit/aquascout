@@ -1,9 +1,10 @@
 # Geofabrik region paths (one per line). Budget: Supabase free tier 500 MB; Colombia ≈ 58 MB after slimming.
 central-america
 south-america/colombia
-south-america/venezuela
 north-america/us/florida
 africa/kenya
+# Geofabrik's Venezuela file often downloads very slowly — kept last so it cannot block the others
+south-america/venezuela
 # candidates when budget allows (check the size report at the end of each run):
 # north-america/us/california   (very dense, ~100 MB+)
 # south-america/brazil/nordeste
