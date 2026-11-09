@@ -34,10 +34,16 @@
     [
      "El Espectador — Gobierno descarta desalinizadoras",
      "https://www.elespectador.com/ambiente/blog-el-rio/gobierno-descarta-proyecto-para-construir-plantas-desalinizadoras-para-santa-marta/"
+    ],
+    [
+     "El Tiempo — demanda 2.000 L/s, entrega ~704 L/s",
+     "https://www.eltiempo.com/colombia/otras-ciudades/santa-marta-de-la-espriella-apuesta-por-el-rio-magdalena-para-resolver-la-crisis-de-agua-y-anuncia-acciones-contra-la-mafia-de-carrotanques-y-redes-3598320"
     ]
    ],
    "losses_pct": 60,
-   "alternatives": "Government plan (Oct 2026): (1) cut network losses from ~60% to 20% and rehabilitate wells — of ~1,255 L/s produced only ~753 L/s reaches users; target 20 h/day service within 4 years; (2) regional operator; (3) Magdalena River intake, 5,000 L/s, ~95 km conveyance with 3–4 pumping stations via the Ciénaga corridor, ~COP 3 trillion, horizon 2031, still at proposal stage (an Aug 2024 Barranquilla/Triple A version was 65.5 km). Closer Sierra Nevada rivers (Piedras, Manzanares, Gaira, Toribio, Córdoba; Guachaca/Buritaca proposed) already supply part of the city but fall sharply in dry seasons."
+   "alternatives": "Government plan (Oct 2026): (1) cut network losses from ~60% to 20% and rehabilitate wells — of ~1,255 L/s produced only ~753 L/s reaches users; target 20 h/day service within 4 years; (2) regional operator; (3) Magdalena River intake, 5,000 L/s, ~95 km conveyance with 3–4 pumping stations via the Ciénaga corridor, ~COP 3 trillion, horizon 2031, still at proposal stage (an Aug 2024 Barranquilla/Triple A version was 65.5 km). Closer Sierra Nevada rivers (Piedras, Manzanares, Gaira, Toribio, Córdoba; Guachaca/Buritaca proposed) already supply part of the city but fall sharply in dry seasons.",
+   "deficit_pct": 60,
+   "deficit_note": "Demand estimated at ~2,000 L/s while ~700–750 L/s reaches users (El Tiempo; El Espectador) — about 60–65% of demand unmet."
   },
   {
    "name": "San Andrés island",
