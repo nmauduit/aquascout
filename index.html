@@ -738,6 +738,20 @@ async function adWorldPop(lat,lon,r){
     const j=await res.json();const st=j.statistics&&j.statistics[0];return st?Math.round(st.mean*st.count):null;};
   try{const [near,all]=await Promise.all([one(2),one(r)]);return near==null?null:{pop:near,R:2,radiusPop:all,r};}catch(e){return null;}
 }
+// Plant ceiling: the system Nicolas plans delivers up to 5,000 m³/day (source-dependent)
+const PLANT_MAX_M3D=5000,LPCD=100,LOSS=1.15,CAP_PEOPLE=Math.floor(PLANT_MAX_M3D*1000/(LPCD*LOSS));
+// In cities (or when residents exceed one plant) size on the people without reliable water, capped at one plant
+function targetDemand(ctx,dem,wp){
+  const many=dem.popCity||(wp&&wp.pop>CAP_PEOPLE)||(dem.pop>CAP_PEOPLE);
+  if(!many||dem.popSrc==='entered')return null;
+  const base=wp&&wp.pop>=20?wp.pop:dem.pop;const n=ctx.localNeed;if(!n||n.cay||n.est==null)return null;
+  const acc=Math.max(0,n.est),cont=n.av!=null?Math.max(0,100-n.av):null;
+  const lo=Math.max(acc,cont??acc),hi=Math.min(100,acc+(cont??0));
+  const peopleLo=Math.round(base*lo/100),peopleHi=Math.round(base*hi/100),mid=Math.round((peopleLo+peopleHi)/2);
+  if(mid<50)return null;
+  const target=Math.min(mid,CAP_PEOPLE),plants=Math.max(1,Math.ceil(peopleHi/CAP_PEOPLE));
+  return {base,baseSrc:wp&&wp.pop>=20?'WorldPop 2020, 2 km':'community',lo,hi,peopleLo,peopleHi,target,plants,capped:mid>CAP_PEOPLE,crisis:!!(n.crisis&&n.crisis.type.includes('shortage'))};
+}
 function adDemand(places,wp0){
   const wp=wp0&&wp0.pop>=20?wp0:null; // a handful of modelled residents is noise, not a community
   const c=card('demand','Community & demand','site');
@@ -1455,7 +1469,7 @@ function renderBrief(ctx){
   const IRCset=ctx.localNeed&&ctx.localNeed.safeSrc==='IRCA'&&(ctx.localNeed.set==='rural'?ctx.ircaR:ctx.ircaU)!=null;const IRC=IRCset?ctx.localNeed.safeV:ctx.irca;
   const tiles=[
     {cls:solCls,l:'Sun · year average',v:sol?`${fmt(sol.ann,1)}<small>kWh/m²/d</small>`:'—',n:sol?`worst month ${fmt(sol.worst,1)} (sizing basis) · ${fmt(sol.annRain,0)} mm rain`:'no solar data'},
-    {cls:ctx.assumed?'na':'info',l:'Demand',v:dem,n:ctx.assumed?`assumed ${fmt(ctx.pop,0)} people — ${ctx.popCity?'inside '+esc(ctx.popCity)+': enter target size':'enter real size'}`:`${fmt(ctx.pop,0)} people × 100 L${ctx.popSrc&&ctx.popSrc!=='entered'?' · '+ctx.popSrc:''}`},
+    {cls:ctx.assumed?'na':'info',l:ctx.target?'Demand (target)':'Demand',v:dem,n:ctx.target?`${fmt(ctx.pop,0)} without reliable water (of ~${fmt(ctx.target.base,0)} residents)${ctx.target.plants>1?' · '+ctx.target.plants+' plants to cover all':''}`:ctx.assumed?`assumed ${fmt(ctx.pop,0)} people — ${ctx.popCity?'inside '+esc(ctx.popCity)+': enter target size':'enter real size'}`:`${fmt(ctx.pop,0)} people × 100 L${ctx.popSrc&&ctx.popSrc!=='entered'?' · '+ctx.popSrc:''}`},
     {cls:best&&best.assumed?'na':bestCls,l:'Best feed water',v:best?esc(best.cl?best.cl.c:'?')+(best.assumed?'<small>?</small>':''):'none found',n:best?(best.assumed?`river · salinity not measured (assumed ~${fmt(best.tds,0)} mg/L) · ${fmt(best.sec,1)} kWh/m³`:`${fmt(best.tds,0)} mg/L · ${fmt(best.sec,1)} kWh/m³`):'no source with known salinity'},
     {cls:mCls||(IRC!=null?(IRC<=5?'ok':IRC<=35?'warn':'bad'):'na'),l:micro?'E. coli / coliforms':IRC!=null?'IRCA risk index':'E. coli / coliforms',v:micro?(micro.unit==='positive tests'?`${micro.max?'detected':'absent'}`:micro.max>0?`${fmt(micro.max,0)}<small>max /100 mL</small>`:'0<small>/100 mL</small>'):IRC!=null?`${fmt(IRC,1)}<small>/100</small>`:'not sampled',n:micro?`${micro.n} samples · last ${String(micro.last).slice(0,7)}`:IRC!=null?`${IRCset?esc(ctx.localNeed.set)+' network':'municipal'} tap-water risk (INS); ≤5 no risk`:'no bacteriology in open data'},
     {cls:util?'ok':ctx.utilChecked?'warn':'na',l:'Existing supply',v:util?'utility':ctx.utilChecked?'self-supplied':'unknown',n:util?esc(util):ctx.utilChecked?'no registered system found':'no open utility register for this country'},
@@ -1551,6 +1565,9 @@ async function scan(lat,lon){
     ctx.grid=await Promise.race([gridP,new Promise(r=>setTimeout(()=>r(null),40000)),stopCtl.p.catch(()=>null)]);
     if(stopCtl.stopped)throw new Error('stopped');
     ctx.localNeed=adLocalNeed(ctx,osm,dem);
+    {const t=targetDemand(ctx,dem,wp);if(t){ctx.target=t;ctx.pop=t.target;ctx.Q=t.target*LPCD*LOSS/1000;ctx.assumed=false;ctx.popSrc='people without reliable water (est.)';
+      const c=cards.demand;if(c){setStatus(c,`${fmt(t.target,0)} people without reliable water (est.)`,'ok');
+        html(c,`<div class="note"><b>Sizing basis: people without reliable water.</b> ~${fmt(t.base,0)} residents (${esc(t.baseSrc)}) × ${fmt(t.lo,0)}–${fmt(t.hi,0)}% lacking basic or reliable water = <b>~${fmt(t.peopleLo,0)}–${fmt(t.peopleHi,0)} people</b>${t.crisis?' (a documented shortage means the real figure is likely higher)':''}. The plant is sized for <b>${fmt(t.target,0)}</b> people (${fmt(ctx.Q,0)} m³/d)${t.capped?` — capped at one plant's maximum of ${fmt(PLANT_MAX_M3D,0)} m³/d`:''}.${t.plants>1?` Covering the upper estimate would take about <b>${t.plants} plants</b>.`:''}<div class="hint">Shares are the local access gap plus the national continuity gap for this settlement type (JMP); the range runs from overlap (low) to no overlap (high). Enter a population above to size for a specific customer instead.</div></div>`);}}}
     if(!ctx.grid)gridP.then(async g=>{ctx.grid=g;gridStrategy(ctx);if(cards.localneed){cards.localneed.el.remove();delete cards.localneed;}ctx.localNeed=adLocalNeed(ctx,osm,dem);if(cards.econ){cards.econ.el.remove();delete cards.econ;}await adEconomics(ctx);renderBrief(ctx);});
     if(nat.wellsAdd)ctx.wells+=nat.wellsAdd;
     ctx.wwtp=coverage.some(x=>/Wastewater treatment \((OSM|EPA|ANA)\)/.test(x.topic)&&x.state==='ok')||!!(hw&&hw.n);ctx.hw=hw;
