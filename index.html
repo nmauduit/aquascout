@@ -710,7 +710,16 @@ async function adOSM(lat,lon,r){
   }catch(e){fail(c,e);cov('Mapped water bodies / infrastructure','missing','Overpass unreachable');return {coast:false,places:[]};}
 }
 
-function adDemand(places,wp){
+// WorldPop 2020 residents (100 m grid) inside circles around the point — Esri-hosted WorldPop image service
+async function adWorldPop(lat,lon,r){
+  const circ=km=>{const ring=[];for(let i=0;i<=48;i++){const a=2*Math.PI*i/48;ring.push([lon+km/111.32/Math.cos(lat*Math.PI/180)*Math.cos(a),lat+km/110.57*Math.sin(a)]);}return {rings:[ring],spatialReference:{wkid:4326}};};
+  const one=async km=>{const body=new URLSearchParams({geometry:JSON.stringify(circ(km)),geometryType:'esriGeometryPolygon',mosaicRule:JSON.stringify({mosaicMethod:'esriMosaicAttribute',sortField:'StdTime',sortValue:'2020-01-01',ascending:true}),pixelSize:JSON.stringify({x:0.0008333333,y:0.0008333333,spatialReference:{wkid:4326}}),f:'json'});
+    const res=await Promise.race([fetch('https://worldpop.arcgis.com/arcgis/rest/services/WorldPop_Total_Population_100m/ImageServer/computeStatisticsHistograms',{method:'POST',body,...(stopCtl?{signal:stopCtl.ac.signal}:{})}),new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),15000)),...stopRace()]);
+    const j=await res.json();const st=j.statistics&&j.statistics[0];return st?Math.round(st.mean*st.count):null;};
+  try{const [near,all]=await Promise.all([one(2),one(r)]);return near==null?null:{pop:near,R:2,radiusPop:all,r};}catch(e){return null;}
+}
+function adDemand(places,wp0){
+  const wp=wp0&&wp0.pop>=20?wp0:null; // a handful of modelled residents is noise, not a community
   const c=card('demand','Community & demand','site');
   const manual=+$('#pop').value||0;
   const near=places.filter(p=>p.pop>0).slice(0,5);
@@ -723,11 +732,12 @@ function adDemand(places,wp){
   const Q=pop*lpcd*1.15/1000;
   setStatus(c,assumed?(muniFig?'assumed 2,000 — OSM figure is the whole municipality':'assumed 500 — enter population'):`${fmt(pop,0)} people`,assumed?'warn':'ok');
   if(muniFig)html(c,`<div class="hint">OSM tags <b>${esc(pick.name)}</b> (${esc(pick.place)}) with ${fmt(pick.pop,0)} people — that is the municipality, not the settlement; demand assumes 2,000 until you enter the community size.</div>`);
-  if(wp)html(c,`<div><b>WorldPop 2020:</b> ${fmt(wp.pop,0)} people within the ${wp.R} km box${manual||(pick&&(pick===small||pick.pop<=20000))?' (for reference)':' — used as demand basis'}</div>`);
+  if(wp0)html(c,`<div><b>WorldPop 2020 residents:</b> ~${fmt(wp0.pop,0)} within ${wp0.R} km of the point${wp0.radiusPop!=null?` · ~${fmt(wp0.radiusPop,0)} within the ${wp0.r} km radius`:''}${!wp?' — too few to size a plant on; demand stays assumed':manual||(pick&&(pick===small||pick.pop<=20000))?' (for reference)':' — <b>used as demand basis</b>'}</div><div class="hint">Modelled 2020 estimate on a 100 m grid: residents only (no tourists or seasonal workers), and new developments since 2020 are missing.</div>`);
   html(c,`<dl class="kv"><dt>Population used</dt><dd><b>${fmt(pop,0)}</b> ${assumed?'<span class="pill warn">assumed</span> no OSM population tag nearby — enter the community size above and press Enter':manual?'(entered)':pick?((pick===small||pick.pop<=20000)?`(nearest OSM ${esc(pick.place)}: ${esc(pick.name)}, ${fmt(pick.d,1)} km)`:`(nearest place is the city of ${esc(pick.name)}, ${fmt(pick.d,1)} km — for a community-scale plant enter its population above)`):''}</dd><dt>Demand basis</dt><dd>${lpcd} L/person/day + 15% losses</dd><dt>Average demand</dt><dd><b>${fmt(Q,1)}</b> m³/day · design ${fmt(Q*1.3,0)} m³/day (peak ×1.3)</dd></dl>`);
   if(near.length>1)html(c,`<div class="hint">Other places with population: ${near.filter(p=>p!==pick).map(p=>`${esc(p.name)} ${fmt(p.pop,0)} (${fmt(p.d,0)} km)`).join('; ')}</div>`);
-  src(c,'OpenStreetMap place tags; WorldPop/GHSL in v1');
-  return {pop,Q,assumed,place:pick?pick.place:null,placeName:pick?pick.name:null,placeD:pick?pick.d:null,placePop:pick?pick.pop:null};
+  src(c,'OpenStreetMap place tags; WorldPop 2020 (CC-BY 4.0) via Esri','https://www.worldpop.org');
+  const popSrc=manual?'entered':assumed?'assumed':(pick&&!muniFig&&(pick===small||pick.pop<=20000))?'OSM':wp?'WorldPop 2020':'OSM';
+  return {popSrc,pop,Q,assumed,place:pick?pick.place:null,placeName:pick?pick.name:null,placeD:pick?pick.d:null,placePop:pick?pick.pop:null};
 }
 
 async function adUSGS(lat,lon,r){
@@ -1421,7 +1431,7 @@ function renderBrief(ctx){
   const IRCset=ctx.localNeed&&ctx.localNeed.safeSrc==='IRCA'&&(ctx.localNeed.set==='rural'?ctx.ircaR:ctx.ircaU)!=null;const IRC=IRCset?ctx.localNeed.safeV:ctx.irca;
   const tiles=[
     {cls:solCls,l:'Sun · year average',v:sol?`${fmt(sol.ann,1)}<small>kWh/m²/d</small>`:'—',n:sol?`worst month ${fmt(sol.worst,1)} (sizing basis) · ${fmt(sol.annRain,0)} mm rain`:'no solar data'},
-    {cls:ctx.assumed?'na':'info',l:'Demand',v:dem,n:ctx.assumed?`assumed ${fmt(ctx.pop,0)} people — enter real size`:`${fmt(ctx.pop,0)} people × 100 L`},
+    {cls:ctx.assumed?'na':'info',l:'Demand',v:dem,n:ctx.assumed?`assumed ${fmt(ctx.pop,0)} people — enter real size`:`${fmt(ctx.pop,0)} people × 100 L${ctx.popSrc&&ctx.popSrc!=='entered'?' · '+ctx.popSrc:''}`},
     {cls:bestCls,l:'Best feed water',v:best?esc(best.cl?best.cl.c:'?'):'none found',n:best?`${fmt(best.tds,0)} mg/L · ${fmt(best.sec,1)} kWh/m³`:'no source with known salinity'},
     {cls:mCls||(IRC!=null?(IRC<=5?'ok':IRC<=35?'warn':'bad'):'na'),l:micro?'E. coli / coliforms':IRC!=null?'IRCA risk index':'E. coli / coliforms',v:micro?(micro.unit==='positive tests'?`${micro.max?'detected':'absent'}`:micro.max>0?`${fmt(micro.max,0)}<small>max /100 mL</small>`:'0<small>/100 mL</small>'):IRC!=null?`${fmt(IRC,1)}<small>/100</small>`:'not sampled',n:micro?`${micro.n} samples · last ${String(micro.last).slice(0,7)}`:IRC!=null?`${IRCset?esc(ctx.localNeed.set)+' network':'municipal'} tap-water risk (INS); ≤5 no risk`:'no bacteriology in open data'},
     {cls:util?'ok':ctx.utilChecked?'warn':'na',l:'Existing supply',v:util?'utility':ctx.utilChecked?'self-supplied':'unknown',n:util?esc(util):ctx.utilChecked?'no registered system found':'no open utility register for this country'},
@@ -1500,15 +1510,15 @@ async function scan(lat,lon){
     const osmP=adOSM(lat,lon,r);
     const solar=await adSolar(lat,lon);
     const flow=await adRiverFlow(lat,lon);
-    const natP=runNational(cc,lat,lon,r,loc);progress('isl','run');const islP=islandAt(lat,lon);
+    const natP=runNational(cc,lat,lon,r,loc);const wpP=adWorldPop(lat,lon,r);progress('isl','run');const islP=islandAt(lat,lon);
     const gridP=osmP.catch(()=>{}).then(()=>adGrid(lat,lon,r,cc,loc)).catch(e=>({cls:'none',label:'grid lookup failed: '+e.message,rel:null}));
     const osm=await osmP;
-    let wp=null; // WorldPop API is not callable from a browser page (CORS); backend item
+    const wp=await wpP;
     const dem=adDemand(osm.places||[],wp);const _pl=(osm.places||[]).filter(p=>p.d!=null);const remoteKm=_pl.length?Math.min(..._pl.map(p=>p.d)):null;
     const gw=await adGlobalGW(lat,lon);await adDepth(lat,lon,osm.coast);
     const [hw,salDB]=await Promise.all([adHydroWaste(lat,lon,r),adSalinityDB(lat,lon,r)]);
     const a3=countryA3(cc);const need=await adNeed(a3,cc,loc);const ds=await adDesalNearby(lat,lon);
-    const ctx={lat,lon,r,loc,Q:dem.Q,pop:dem.pop,assumed:dem.assumed,remoteKm,salineArea:!!gw.saline,need,ds,solar,coast:osm.coast,wells:osm.wells,tds:null,wwtp:false,utility:null,micro:null,wwtpName:null,flow,rivers:(osm.cnt&&(osm.cnt['River']||0))||0};
+    const ctx={lat,lon,r,loc,Q:dem.Q,pop:dem.pop,assumed:dem.assumed,popSrc:dem.popSrc,remoteKm,salineArea:!!gw.saline,need,ds,solar,coast:osm.coast,wells:osm.wells,tds:null,wwtp:false,utility:null,micro:null,wwtpName:null,flow,rivers:(osm.cnt&&(osm.cnt['River']||0))||0};
     const nat=await natP;Object.assign(ctx,nat);
     ctx.comp=(await loadComp())[a3]||null;
     ctx.crisis=(await loadCrises()).map(x=>({...x,d:km([lat,lon],[x.lat,x.lon])})).filter(x=>x.d<=x.radius_km).sort((a,b)=>(a.severity==='severe'?0:1)-(b.severity==='severe'?0:1)||a.d-b.d)[0]||null;
