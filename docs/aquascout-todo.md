@@ -1,4 +1,4 @@
-# AquaScout — to-do list (updated 2026-11-08 19:30 PT)
+# AquaScout — to-do list (updated 2026-11-08 21:15 PT)
 
 Live: https://nmauduit.github.io/aquascout/ · Repo: github.com/nmauduit/aquascout
 
@@ -6,28 +6,28 @@ Live: https://nmauduit.github.io/aquascout/ · Repo: github.com/nmauduit/aquasco
 
 ## A. Your actions
 - [ ] Test location #2 and send screenshots of anything wrong, surprising or missing (location #1 Exuma / Torch Cay done).
-- [ ] Decide: count people with WorldPop (B1).
 
 ## B. Next build items (suggested order)
-1. **People count from WorldPop** — people within the radius and near the point; replaces "assumed 500 people"; demand and sizing follow.
-2. **River check, honest version** — dry-season flow (GloFAS history), tidal/saline river mouths, large rivers 50–100 km away (Magdalena-type cases).
-3. **Financing & payback** — water tariff or plant-as-a-service fee, payback, IRR, CAPEX per household.
-4. **Calibrate costs** against published solar RO plants (Yotojoroin, Puerto Estrella, Kiunga, Witsand, Strongili).
-5. **Utility performance (public)** — hours of service and losses (Superservicios SUI, IBNET).
-6. **Crisis list** — add Caribbean islands and Africa; review twice a year.
-7. **Batch screening** — rank communities in a region by need × sun × feed water × grid cost.
-8. **Small-cay rule follow-ups** — shorter island-check wait or pre-baked Caribbean island polygons.
-9. **Sizing refinements** — small-plant energy penalty, pumping head, brine disposal, 24-h mode (demand stays 100 L/person/day).
-10. **Inventory gaps** — Haiti, Jamaica, Yemen, Libya, Mauritania, Vietnam, Fiji, Tonga, PNG; Osmosun; Elemental Water Makers.
-11. **Subnational JMP leftovers** — Uganda, Turkey, Nepal, Lesotho, Palestine.
-12. **Electricity tariffs** with fuel surcharge; SAIDI/SAIFI.
-13. **UI** — ES/FR toggle; "last updated" badges.
+1. **Financing & payback** — water tariff or plant-as-a-service fee, payback, IRR, CAPEX per household.
+2. **Calibrate costs** against published solar RO plants (Yotojoroin, Puerto Estrella, Kiunga, Witsand, Strongili).
+3. **Utility performance (public)** — hours of service and losses (Superservicios SUI, IBNET).
+4. **Crisis list** — add Caribbean islands and Africa; review twice a year.
+5. **Batch screening** — rank communities in a region by need × sun × feed water × grid cost.
+6. **Small-cay rule follow-ups** — shorter island-check wait or pre-baked Caribbean island polygons.
+7. **Sizing refinements** — small-plant energy penalty, pumping head, brine disposal, 24-h mode (demand stays 100 L/person/day).
+8. **Inventory gaps** — Haiti, Jamaica, Yemen, Libya, Mauritania, Vietnam, Fiji, Tonga, PNG; Osmosun; Elemental Water Makers.
+9. **Subnational JMP leftovers** — Uganda, Turkey, Nepal, Lesotho, Palestine.
+10. **Electricity tariffs** with fuel surcharge; SAIDI/SAIFI.
+11. **UI** — ES/FR toggle; "last updated" badges.
 
 ## C. Backend
 - Supabase 397 / 500 MB — room for about one more OSM region before Pro ($25/month).
 - Pre-bake CORS-blocked rasters (GEBCO); batch-screening RPC.
 
 ## Done 2026-11-08
+- [x] **River check** — 3 years of daily flow (dry-season low), seasonal / small-stream / urban-sewage / tidal flags; doubtful rivers never become the "best feed"; large rivers 25–100 km away sampled as regional-transfer options.
+- [x] **People count from WorldPop 2020** — residents within 2 km and within the radius; used when OSM has no usable figure; inside a city demand assumes a 2,000-person community.
+- [x] **Feed tile** flags assumed river salinity ("fresh?", grey).
 - [x] **Bulk files** — HydroWASTE (58,502 plants) and global salinity (138k cells) in Supabase; gridfinder predicted lines (11,299 static tiles). Jones 2019 not public (proprietary DesalData).
 - [x] **Continuity & safety** — JMP service components (208 countries), rural/urban IRCA, two map layers.
 - [x] **Supply-problem flag** — red, factual, separate from access need; crisis list (6 Colombian entries with sources).
