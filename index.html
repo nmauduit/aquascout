@@ -633,6 +633,17 @@ async function adSolar(lat,lon){
   }catch(e){fail(c,e);cov('Solar resource','missing','NASA POWER unreachable');return null;}
 }
 
+// Large rivers 25–100 km away (GloFAS mean ≥ 20 m³/s) — candidates for regional transfer schemes, found from 64 sample points in one request
+async function bigRivers(lat,lon){
+  const pts=[];for(const d of [25,50,75,100])for(let k=0;k<16;k++){const a=2*Math.PI*k/16;pts.push({la:lat+d/110.57*Math.sin(a),lo:lon+d/111.32/Math.cos(lat*Math.PI/180)*Math.cos(a),d,k});}
+  try{const j=await getJSON(`https://flood-api.open-meteo.com/v1/flood?latitude=${pts.map(p=>p.la.toFixed(3)).join(',')}&longitude=${pts.map(p=>p.lo.toFixed(3)).join(',')}&daily=river_discharge_mean&past_days=1&forecast_days=1`,{timeout:20000});
+    const arr=Array.isArray(j)?j:[j];const dirs=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSW','SW','WSW','W','WNW','NW','NNW'];
+    const hits=arr.map((x,i)=>({m:(x.daily?.river_discharge_mean||[]).find(y=>y!=null),...pts[i]})).filter(x=>x.m!=null&&x.m>=20);
+    // one entry per direction sector: keep the nearest point of each big river
+    const out=[];for(const h of hits.sort((a,b)=>a.d-b.d)){const bearing=((90-h.k*22.5)%360+360)%360;h.dir=dirs[Math.round(bearing/22.5)%16];if(!out.some(o=>Math.abs(o.k-h.k)<=1||Math.abs(o.k-h.k)>=15))out.push(h);}
+    return out.sort((a,b)=>b.m-a.m).slice(0,4);
+  }catch(e){return [];}
+}
 async function adRiverFlow(lat,lon){
   const c=card('flow','River discharge (modelled)','sources');
   try{
@@ -640,10 +651,19 @@ async function adRiverFlow(lat,lon){
     const r=await getJSON(u);const d=r.daily;const vals=d.river_discharge.filter(x=>x!=null);
     if(!vals.length)throw new Error('no GloFAS cell here (ocean or no river network)');
     const last=vals[vals.length-1],mean=d.river_discharge_mean?.filter(x=>x!=null).slice(-1)[0];
-    setStatus(c,`${fmt(last,1)} m³/s`,'ok');
+    // dry-season reality: 3 years of daily GloFAS history -> low-flow percentiles
+    let hist=null;try{const end=new Date(Date.now()-10*864e5),st=new Date(end);st.setFullYear(st.getFullYear()-3);const f=x=>x.toISOString().slice(0,10);
+      const h=await getJSON(`https://flood-api.open-meteo.com/v1/flood?latitude=${lat}&longitude=${lon}&daily=river_discharge&start_date=${f(st)}&end_date=${f(end)}`,{timeout:20000});
+      const v=(h.daily?.river_discharge||[]).filter(x=>x!=null).sort((a,b)=>a-b);const q=p=>v[Math.floor(p*(v.length-1))];
+      if(v.length>300)hist={n:v.length,min:v[0],q10:q(.1),q50:q(.5),q90:q(.9)};}catch(e){}
+    const seasonal=hist?(hist.q10<0.2||hist.q10/Math.max(hist.q50,1e-6)<0.15):null;
+    const small=(hist?hist.q50:mean??last)<5;
+    setStatus(c,`${fmt(last,1)} m³/s${hist?` · dry-season ${fmt(hist.q10,1)}`:''}`,'ok');
+    if(hist)html(c,`<dl class="kv"><dt>Last 3 years (daily)</dt><dd>dry-season low (10th percentile) <b>${fmt(hist.q10,2)}</b> m³/s · median ${fmt(hist.q50,1)} · high ${fmt(hist.q90,1)} · lowest ${fmt(hist.min,2)}</dd></dl>${seasonal?`<div class="hint"><b>Strongly seasonal:</b> dry-season flow is a small fraction of the median — not a year-round source without large storage.</div>`:''}`);
+    if(small)html(c,`<div class="hint">Small river: the global model (≈5 km cells) represents small coastal and mountain streams poorly and often overstates their flow. Check a gauge or a dry-season visit before relying on it.</div>`);
     html(c,`<dl class="kv"><dt>Latest (GloFAS cell)</dt><dd><b>${fmt(last,1)}</b> m³/s</dd><dt>30-day range</dt><dd>${fmt(Math.min(...vals),1)} – ${fmt(Math.max(...vals),1)} m³/s</dd><dt>Climatological mean</dt><dd>${fmt(mean,1)} m³/s</dd></dl><div class="hint">GloFAS v4 at ~5 km: the largest river in the grid cell, not necessarily a stream at this exact point. Use for order-of-magnitude surface-water availability.</div>`);
     src(c,'Open-Meteo Flood API (Copernicus GloFAS)',u);cov('Surface-water quantity','ok','GloFAS modelled discharge');
-    return {last,mean,min:Math.min(...vals),max:Math.max(...vals)};
+    return {last,mean,min:Math.min(...vals),max:Math.max(...vals),hist,seasonal,small};
   }catch(e){if(/no GloFAS cell/.test(e.message)){setStatus(c,'no river at this point','');progress(c.id,'done');html(c,'<div class="hint">The global river model has no river cell here (open sea or a small island) — not an error.</div>');cov('Surface-water quantity','none','no river cell');}else fail(c,e);if(!/no GloFAS cell/.test(e.message))cov('Surface-water quantity','missing',e.message);return null;}
 }
 
@@ -1336,14 +1356,21 @@ function adFeedOptions(ctx){
   if(ctx.wwtp)cands.push({src:'Treated wastewater (reuse)',tds:1000,sec:1.8});
   // a perennial river within the radius is usually fresh: conventional treatment, no RO. Salinity is not sampled, so it is flagged as an assumption.
   const fl=ctx.flow;ctx.riverOpt=null;
-  if(fl&&ctx.rivers>0&&(fl.mean??fl.last)>=0.5){const ref=fl.mean??fl.last;const share=Q?Q/86400/Math.max(0.001,fl.min):null;
-    ctx.riverOpt={mean:ref,min:fl.min,max:fl.max,share};
-    cands.push({src:`Fresh river water within radius — GloFAS ~${fmt(ref,1)} m³/s mean (${fmt(fl.min,1)}–${fmt(fl.max,1)} last 30 days); salinity not sampled, assumed fresh above any tidal reach; conventional treatment or UF, RO not needed`,tds:300,sec:0.4,assumed:true});}
+  if(fl&&ctx.rivers>0&&(fl.mean??fl.last)>=0.5){const ref=fl.mean??fl.last,low=fl.hist?fl.hist.q10:fl.min;const need=Q?Q/86400:0;const share=need/Math.max(0.001,low);
+    const urban=!!ctx.popCity||(ctx.wpRadius||0)>100000;const tidal=!!ctx.coast;
+    const yearRound=!fl.seasonal&&share<=0.1;
+    ctx.riverOpt={mean:ref,low,share,seasonal:fl.seasonal,small:fl.small,urban,tidal,yearRound,hist:!!fl.hist};
+    const notes=[fl.hist?`dry-season ${fmt(low,2)} m³/s`:`last-30-day low ${fmt(low,1)} m³/s (no history)`];
+    if(fl.small)notes.push('small river, model unreliable');if(urban)notes.push('urban river: sewage likely, full treatment needed');if(tidal)notes.push('intake must be upstream of the tidal reach');
+    if(yearRound)cands.push({src:`River within radius — GloFAS ~${fmt(ref,1)} m³/s mean; ${notes.join('; ')}; salinity not sampled (assumed fresh)`,tds:300,sec:urban?1.0:0.4,assumed:true,doubtful:fl.small||urban});
+    else cands.push({src:`River within radius — ${fl.seasonal?'strongly seasonal':'too small for this demand in the dry season'} (${notes.join('; ')}); not a year-round source`,tds:null,sec:null});}
   if(!cands.length)cands.push({src:'No feed-water source identified in open data',tds:null,sec:null});
   const rows=cands.map(k=>{const E=k.sec!=null&&Q?Q*k.sec:null;const pv=E&&psh?E/(psh*0.75):null;const cl=classifyTDS(k.tds);return{...k,E,pv,cl,batt:pv?Math.round(pv*0.8*1.5):null,gen:pv?Math.ceil(pv*0.8*1.25/5)*5:null,land:pv?Math.round(pv*7.5+Q*0.4+Q*2):null};});
   setStatus(c,Q?`${fmt(Q,0)} m³/d`:'needs population','');
   html(c,table(rows,[{h:'Feed',f:r=>esc(r.src)},{h:'TDS mg/L',num:1,f:r=>r.assumed?`~${fmt(r.tds,0)} (assumed)`:fmt(r.tds,0)},{h:'Class',f:r=>r.cl?`<span class="pill ${r.cl.cls}">${esc(r.cl.c)}</span>`:'?'},{h:'kWh/m³',num:1,f:r=>fmt(r.sec,1)},{h:'kWh/day',num:1,f:r=>fmt(r.E,0)},{h:'PV kWp',num:1,f:r=>fmt(r.pv,0)},{h:'Batt kWh',num:1,f:r=>fmt(r.batt,0)},{h:'Gen kVA',num:1,f:r=>fmt(r.gen,0)},{h:'Land m²',num:1,f:r=>fmt(r.land,0)}]));
-  ctx.best=rows.filter(r=>r.E!=null).sort((a,b)=>a.E-b.E)[0]||null;
+  // a river the model cannot vouch for (small stream, urban sewage) never wins over a dependable source
+  const elig=rows.filter(r=>r.E!=null),sure=elig.filter(r=>!r.doubtful);
+  ctx.best=(sure.length?sure:elig).sort((a,b)=>a.E-b.E)[0]||null;
   gridStrategy(ctx,c);
   html(c,`<div class="hint">Daytime-RO strategy: PV sized on worst-month GHI (${psh?fmt(psh,2):'?'} kWh/m²/d, PR 0.75); battery ≈ 1.5 h of RO load (water storage does the rest); standby genset ×1.25; land = PV 7.5 m²/kWp + plant 0.4 m²/(m³/d) + 2 days' storage. Inland brackish needs brine evaporation ponds (~60 m² per m³/d of plant) not included. Energy figures include intake and distribution; small-plant penalty not applied.</div>`);
 }
@@ -1384,17 +1411,21 @@ async function adSalinityDB(lat,lon,r){
 function adAlternatives(ctx){
   const c=card('alts','Alternatives to a new plant','energy');
   const items=[];const cr=ctx.crisis,ro=ctx.riverOpt,best=ctx.best;
-  if(ro)items.push(`<b>Fresh river water nearby.</b> Modelled flow ~${fmt(ro.mean,1)} m³/s; this plant would take ${ro.share!=null?(ro.share<0.001?'<0.1':fmt(ro.share*100,1))+'%':'a small share'} of the lowest flow in the last 30 days. Treating river water needs roughly a tenth of the energy of seawater RO. <i>Check the dry-season flow, water rights and quality (sediment, agrochemicals, metals) before choosing it — Caribbean mountain rivers can drop sharply in the dry season.</i>`);
+  if(ro&&ro.yearRound)items.push(`<b>River nearby (likely fresh).</b> Modelled flow ~${fmt(ro.mean,1)} m³/s, dry-season low ~${fmt(ro.low,2)} m³/s; this plant would take ${ro.share<0.001?'<0.1':fmt(ro.share*100,1)}% of the low flow. Treating river water needs a fraction of the energy of seawater RO${ro.urban?', but an <b>urban river</b> usually carries sewage and needs full treatment':''}.${ro.small?' <i>Small river: the global model often overstates such streams — confirm with a gauge or a dry-season visit.</i>':''}${ro.tidal?' Intake must sit upstream of the tidal reach.':''} <i>Check water rights and quality (sediment, agrochemicals, metals).</i>`);
+  else if(ro)items.push(`<b>River nearby, but not a year-round source.</b> ${ro.seasonal?'Flow is strongly seasonal':'Dry-season flow is too small for this demand'} (dry-season low ~${fmt(ro.low,2)} m³/s). It could only supplement another source in the wet season.`);
+  const big=(ctx.bigRivers||[]).filter(b=>b.d>ctx.r);
+  if(big.length)items.push(`<b>Large rivers in the region</b> (regional transfer options — city-scale pipelines and pumping, not a community plant): ${big.map(b=>`~${fmt(b.m,b.m>=100?0:1)} m³/s about ${b.d} km ${b.dir}`).join('; ')}. <span class="hint">Distances are to the sampled model cell (±12 km), not a surveyed route.</span>`);
   if(cr&&cr.alternatives)items.push(`<b>What the authorities plan for ${esc(cr.name)}.</b> ${esc(cr.alternatives)}`);
   if(cr&&cr.losses_pct)items.push(`<b>Network losses ~${cr.losses_pct}%.</b> Recovering lost water is normally the cheapest new supply for a city; if the loss-reduction target is met, rationing should ease and demand for supplementary plants will shrink.`);
   else if(ctx.utility)items.push(`<b>Check the utility's losses.</b> A registered utility serves this area; its non-revenue water (often 30–50% in the region) is not in open data. If losses are high, repairing the network can be cheaper than any new plant.`);
   let concl;
-  if(ro||(cr&&cr.losses_pct>=40))concl=`A new desalination plant is probably <b>not the cheapest answer for the whole community</b>. A small plant can still make sense where users need reliable water <b>now</b> (before planned works deliver), are off the network, or need a guaranteed quality (hotels, hospitals, industry).`;
-  else concl=`No cheaper alternative was found in open data within ${ctx.r} km${ctx.coast?'; seawater RO is the realistic option':''}. Rivers farther away and utility performance are not checked automatically.`;
-  ctx.altConcl=concl.replace(/<[^>]+>/g,'');ctx.altCheaper=!!(ro||(cr&&cr.losses_pct>=40));
+  const roGood=ro&&ro.yearRound&&!ro.urban&&!ro.small;
+  if(roGood||(cr&&cr.losses_pct>=40))concl=`A new desalination plant is probably <b>not the cheapest answer for the whole community</b>. A small plant can still make sense where users need reliable water <b>now</b> (before planned works deliver), are off the network, or need a guaranteed quality (hotels, hospitals, industry).`;
+  else concl=`No cheaper alternative was found in open data within ${ctx.r} km${ctx.coast?'; seawater RO is the realistic option':''}. Rivers farther away beyond the sampled large rivers and utility performance are not checked automatically.`;
+  ctx.altConcl=concl.replace(/<[^>]+>/g,'');ctx.altCheaper=!!(roGood||(cr&&cr.losses_pct>=40));
   setStatus(c,ctx.altCheaper?'cheaper options may exist':'none found nearby',ctx.altCheaper?'warn':'ok');
   if(items.length)html(c,'<ul class="plain">'+items.map(x=>`<li>${x}</li>`).join('')+'</ul>');
-  html(c,`<div>${concl}</div><div class="hint">Only the scan radius is searched for rivers; regional transfers (e.g. a river 50–100 km away) come from the curated crisis list, not from an automatic search.</div>`);
+  html(c,`<div>${concl}</div><div class="hint">Rivers inside the scan radius are checked against 3 years of daily flow; large rivers 25–100 km away are found by sampling the global river model (GloFAS) and are indicative only.</div>`);
   if(cr)src(c,cr.sources.map(x=>x[0]).join(' · '),cr.sources[cr.sources.length-1][1]);
 }
 
@@ -1503,7 +1534,7 @@ async function scan(lat,lon){
     const osmP=adOSM(lat,lon,r);
     const solar=await adSolar(lat,lon);
     const flow=await adRiverFlow(lat,lon);
-    const natP=runNational(cc,lat,lon,r,loc);const wpP=adWorldPop(lat,lon,r);progress('isl','run');const islP=islandAt(lat,lon);
+    const natP=runNational(cc,lat,lon,r,loc);const bigP=bigRivers(lat,lon);const wpP=adWorldPop(lat,lon,r);progress('isl','run');const islP=islandAt(lat,lon);
     const gridP=osmP.catch(()=>{}).then(()=>adGrid(lat,lon,r,cc,loc)).catch(e=>({cls:'none',label:'grid lookup failed: '+e.message,rel:null}));
     const osm=await osmP;
     const wp=await wpP;
@@ -1511,9 +1542,10 @@ async function scan(lat,lon){
     const gw=await adGlobalGW(lat,lon);await adDepth(lat,lon,osm.coast);
     const [hw,salDB]=await Promise.all([adHydroWaste(lat,lon,r),adSalinityDB(lat,lon,r)]);
     const a3=countryA3(cc);const need=await adNeed(a3,cc,loc);const ds=await adDesalNearby(lat,lon);
-    const ctx={lat,lon,r,loc,Q:dem.Q,pop:dem.pop,assumed:dem.assumed,popSrc:dem.popSrc,popCity:dem.popCity,remoteKm,salineArea:!!gw.saline,need,ds,solar,coast:osm.coast,wells:osm.wells,tds:null,wwtp:false,utility:null,micro:null,wwtpName:null,flow,rivers:(osm.cnt&&(osm.cnt['River']||0))||0};
+    const ctx={lat,lon,r,loc,Q:dem.Q,pop:dem.pop,assumed:dem.assumed,popSrc:dem.popSrc,popCity:dem.popCity,wpRadius:wp?wp.radiusPop:null,remoteKm,salineArea:!!gw.saline,need,ds,solar,coast:osm.coast,wells:osm.wells,tds:null,wwtp:false,utility:null,micro:null,wwtpName:null,flow,rivers:(osm.cnt&&(osm.cnt['River']||0))||0};
     const nat=await natP;Object.assign(ctx,nat);
     ctx.comp=(await loadComp())[a3]||null;
+    ctx.bigRivers=await Promise.race([bigP,new Promise(r=>setTimeout(()=>r([]),15000))]);
     ctx.crisis=(await loadCrises()).map(x=>({...x,d:km([lat,lon],[x.lat,x.lon])})).filter(x=>x.d<=x.radius_km).sort((a,b)=>(a.severity==='severe'?0:1)-(b.severity==='severe'?0:1)||a.d-b.d)[0]||null;
     {const isl=await Promise.race([islP,new Promise(r=>setTimeout(()=>r(null),8000)),stopCtl.p.catch(()=>null)]);progress('isl','done');if(isl&&isl.area<50){const inside=(ctx.ds?.all||[]).filter(p=>isl.rings.some(rg=>pipRing(p.lo,p.la,rg)));if(!inside.length&&!ctx.utility)ctx.smallCay={name:isl.name,area:isl.area};}}
     ctx.grid=await Promise.race([gridP,new Promise(r=>setTimeout(()=>r(null),40000)),stopCtl.p.catch(()=>null)]);
