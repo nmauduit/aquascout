@@ -692,8 +692,7 @@ async function adOSM(lat,lon,r){
     let r2=null,lastErr=null,fromCache=null;
     const cov0=await cacheCovered(lat,lon);
     if(cov0){try{const [rows,pl]=await Promise.all([sbRpc('osm_near',{lat,lon,r_m:rm,theme_in:'water',lim:800}),sbRpc('osm_places',{lat,lon,r_m:Math.max(rm*2,20000),lim:40}).catch(()=>[])]);const el=cacheToElements(rows).filter(e=>!(e.tags.place&&e.tags.population));const pe=cacheToElements(pl.map(x=>({...x,geojson:null})));r2={elements:el.concat(pe)};fromCache=cov0;}catch(e){html(c,`<div class="hint">cache: ${esc(e.message)} — using Overpass</div>`);}}
-    if(!r2){const mirrors=['https://overpass-api.de/api/interpreter','https://overpass.kumi.systems/api/interpreter','https://lz4.overpass-api.de/api/interpreter'];
-    for(const m of mirrors){try{r2=await getJSON(m+'?data='+encodeURIComponent(q),{timeout:70000});break;}catch(e){lastErr=e;html(c,`<div class="hint">${esc(m.replace('https://','').split('/')[0])}: ${esc(e.message)} — trying next mirror</div>`);}}}
+    if(!r2){try{r2=await overpass(q,45000);}catch(e){lastErr=e;}}
     if(!r2)throw lastErr||new Error('all Overpass mirrors failed');
     if(fromCache)html(c,`<div class="hint">From the AquaScout weekly cache (region ${esc(fromCache.region)}, loaded ${esc(String(fromCache.loaded_at).slice(0,10))}).</div>`);
     const el=r2.elements||[];const cnt={};const feats=[];let coast=false;const places=[];
@@ -1205,7 +1204,7 @@ const OVERPASS_MIRRORS=['https://overpass-api.de/api/interpreter','https://overp
 // Which island is this point on? (OSM place=island/islet polygons). Used to warn when national statistics cannot describe a small outer cay.
 async function islandAt(lat,lon){
   const q=`[out:json][timeout:20];is_in(${lat},${lon})->.a;(way(pivot.a)[place~"^(island|islet)$"];relation(pivot.a)[place~"^(island|islet)$"];);out tags geom;`;
-  try{const r=await Promise.race([overpass(q,25000),new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),30000))]);
+  try{const r=await Promise.race([overpass(q,20000),new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),25000))]);
     const els=(r.elements||[]).map(e=>{let rings=[];if(e.type==='way'&&e.geometry)rings=[e.geometry.map(g=>[g.lon,g.lat])];else if(e.members)rings=e.members.filter(m=>m.role==='outer'&&m.geometry).map(m=>m.geometry.map(g=>[g.lon,g.lat]));
       // area of each ring in km² (equirectangular is fine at island scale)
       let a=0;for(const ring of rings){let s2=0;const k=Math.cos(lat*Math.PI/180)*111.32;for(let i=0,j=ring.length-1;i<ring.length;j=i++)s2+=(ring[j][0]*k)*(ring[i][1]*110.57)-(ring[i][0]*k)*(ring[j][1]*110.57);a+=Math.abs(s2)/2;}
@@ -1213,7 +1212,11 @@ async function islandAt(lat,lon){
     return els[0]||null;
   }catch(e){return null;}
 }
-async function overpass(q,timeout=100000){let last=null;for(const m of OVERPASS_MIRRORS){try{return await getJSON(m+'?data='+encodeURIComponent(q),{timeout});}catch(e){last=e;}}throw last||new Error('Overpass unavailable');}
+// Hedged requests: ask the first public server, add the second after 6 s and the third after 14 s if no answer yet; the first answer wins.
+// (Asking them one after the other meant waiting out a full timeout on a busy server before trying the next.)
+function overpass(q,timeout=45000){const ms=OVERPASS_MIRRORS;return new Promise((res,rej)=>{let done=false,fails=0,started=0;const timers=[];
+  const start=i=>{if(done||i>=ms.length||started>i)return;started=i+1;getJSON(ms[i]+'?data='+encodeURIComponent(q),{timeout}).then(r=>{if(!done){done=true;timers.forEach(clearTimeout);res(r);}},e=>{fails++;if(fails>=ms.length){if(!done){done=true;rej(e);}}else start(started);});};
+  start(0);timers.push(setTimeout(()=>start(1),6000),setTimeout(()=>start(2),14000));});}
 const voltKV=v=>{if(!v)return null;const n=String(v).split(/[;,/]/).map(x=>parseFloat(x)).filter(x=>!isNaN(x));return n.length?Math.max(...n)/1000:null;};
 const voltColor=kv=>kv==null?'#888':kv>=200?'#b0005c':kv>=100?'#d7301f':kv>=30?'#f46d43':'#fdae61';
 function distToPath(pt,coords){let best=Infinity;for(let i=0;i<coords.length;i++){const d=km(pt,coords[i]);if(d<best)best=d;if(i){const a=coords[i-1],b=coords[i];const t=((pt[0]-a[0])*(b[0]-a[0])+(pt[1]-a[1])*(b[1]-a[1]))/(((b[0]-a[0])**2+(b[1]-a[1])**2)||1);if(t>0&&t<1){const p=[a[0]+t*(b[0]-a[0]),a[1]+t*(b[1]-a[1])];const d2=km(pt,p);if(d2<best)best=d2;}}}return best;}
@@ -1227,7 +1230,7 @@ async function adGrid(lat,lon,r,cc,loc){
     const q=`[out:json][timeout:60];(way(around:${R},${lat},${lon})["power"~"^(line|minor_line|cable)$"];nwr(around:${R},${lat},${lon})["power"~"^(substation|plant)$"];node(around:${R},${lat},${lon})["power"="generator"]["generator:source"]["generator:output:electricity"];);out tags geom 500;`;
     let r2=null;const cov0=await cacheCovered(lat,lon);
     if(cov0){try{const rows=await sbRpc('osm_near',{lat,lon,r_m:R,theme_in:'power',lim:600});r2={elements:cacheToElements(rows)};g.cache=cov0;}catch(e){}}
-    if(!r2)r2=await overpass(q,65000);
+    if(!r2)r2=await overpass(q,45000);
     for(const e of r2.elements||[]){const t=e.tags||{};
       if(/^(line|minor_line|cable)$/.test(t.power)&&e.geometry){const co=e.geometry.map(p=>[p.lat,p.lon]);const kv=voltKV(t.voltage);const d=distToPath([lat,lon],co);g.lines.push({kv,d,co,name:t.name||'',op:t.operator||'',kind:t.power});}
       else if(t.power==='substation'){const la=e.lat??e.center?.lat??(e.geometry&&e.geometry[0]?.lat),lo=e.lon??e.center?.lon??(e.geometry&&e.geometry[0]?.lon);if(la==null)continue;g.subs.push({name:t.name||'Substation',kv:voltKV(t.voltage),op:t.operator||'',d:km([lat,lon],[la,lo]),la,lo,sub:t.substation||''});}
