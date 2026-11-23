@@ -1484,7 +1484,7 @@ function treatmentTrain(ctx){
   const add=(g,t,why,cap,cons,as)=>st.push({g,t,why,cap,cons:cons||0,as:!!as});
   const city=!!ctx.popCity||(ctx.wpRadius||0)>100000,nWw=ctx.hw&&ctx.hw.n||0,ucw=ctx.aq&&ctx.aq.ucw_cat!=null?ctx.aq.ucw_cat:null;
   const post=(degas)=>{if(degas)add('Post-treatment','Degassing tower','strips carbon dioxide and any hydrogen sulfide from the RO water and raises its pH',30,0);
-    add('Post-treatment',Q>20000?'Lime + CO₂ remineralisation':'CO₂ + calcite (limestone) contactor, caustic trim','RO water has almost no minerals and is corrosive; a calcite contactor is the simplest option to run at this size'+(b.kind==='well'?' (blending with filtered raw water is cheaper where the raw water is clean)':''),110,0.04);
+    add('Post-treatment',Q>20000?'Remineralisation: lime + CO₂':'Remineralisation: CO₂ + calcite (limestone) contactor, caustic trim','RO water has almost no minerals and is corrosive; a calcite contactor is the simplest option to run at this size'+(b.kind==='well'?' (blending with filtered raw water is cheaper where the raw water is clean)':''),110,0.04);
     add('Post-treatment','Disinfection (chlorine)','protects the water in storage and in the network',15,0.008);};
   let label,noRO=false;
   if(b.kind==='sea'){label='seawater RO';
