@@ -556,7 +556,7 @@ const dossier=$('#dossier');
 const cards={};
 const GROUPS=[['site','Site'],['sources','Water sources & quantity'],['quality','Water quality'],['system','Existing water system'],['energy','Solar & plant sizing'],['coverage','Data coverage']];
 const groupEl={};let progressEl=null,progressItems={};
-const SRC_LABELS={aq:'Basin water risk (Aqueduct)',mg:'Microgrid key figures',isl:'Island check (OSM)',hw:'Wastewater plants (HydroWASTE)',sal:'Measured salinity (global DB)',alts:'Alternatives to a new plant',loc:'Place & elevation (OSM, Open-Meteo)',solar:'Solar & rain (NASA POWER)',osm:'Water bodies & infrastructure (OpenStreetMap)',flow:'River discharge (GloFAS)',demand:'Community & demand',usgs:'USGS gauges & wells',wqp:'Water Quality Portal (chemistry, E. coli)',util:'EPA water utility',echo:'EPA ECHO wastewater',hubeau:"Hub'Eau (eau potable, nappes, rivières)",'co-irca':'INS SIVICAP (IRCA)','co-q':'IDEAM water quality','co-st':'IDEAM stations','co-sui':'Superservicios RUPS',whymap:'WHYMAP global hydrogeology',need:'Water access (WHO/UNICEF JMP)',localneed:'Water need at this location',desal:'Desalination plants nearby',gebco:'GEBCO sea depth','br-st':'ANA hydromet network','br-gw':'RIMAS groundwater wells','br-ete':'ANA sewage plants','br-note':'Brazil quality (pending)',wpdx:'WPdx water points',bgs:'Africa Groundwater Atlas (BGS)',portals:'National portals',nat:'National network',grid:'Electricity grid (OSM, HIFLD, IPSE ZNI, World Bank)',feed:'Feed-water sizing',econ:'Energy cost: grid vs solar',cov:'Coverage report'};
+const SRC_LABELS={tt:'Treatment train',aq:'Basin water risk (Aqueduct)',mg:'Microgrid key figures',isl:'Island check (OSM)',hw:'Wastewater plants (HydroWASTE)',sal:'Measured salinity (global DB)',alts:'Alternatives to a new plant',loc:'Place & elevation (OSM, Open-Meteo)',solar:'Solar & rain (NASA POWER)',osm:'Water bodies & infrastructure (OpenStreetMap)',flow:'River discharge (GloFAS)',demand:'Community & demand',usgs:'USGS gauges & wells',wqp:'Water Quality Portal (chemistry, E. coli)',util:'EPA water utility',echo:'EPA ECHO wastewater',hubeau:"Hub'Eau (eau potable, nappes, rivières)",'co-irca':'INS SIVICAP (IRCA)','co-q':'IDEAM water quality','co-st':'IDEAM stations','co-sui':'Superservicios RUPS',whymap:'WHYMAP global hydrogeology',need:'Water access (WHO/UNICEF JMP)',localneed:'Water need at this location',desal:'Desalination plants nearby',gebco:'GEBCO sea depth','br-st':'ANA hydromet network','br-gw':'RIMAS groundwater wells','br-ete':'ANA sewage plants','br-note':'Brazil quality (pending)',wpdx:'WPdx water points',bgs:'Africa Groundwater Atlas (BGS)',portals:'National portals',nat:'National network',grid:'Electricity grid (OSM, HIFLD, IPSE ZNI, World Bank)',feed:'Feed-water sizing',econ:'Energy cost: grid vs solar',cov:'Coverage report'};
 let scanT0=0,scanTimer=null;
 function scaffold(){dossier.innerHTML='';progressEl=document.createElement('div');progressEl.className='status';progressEl.innerHTML='<div class="hd"><span>Scanning…</span><span class="t">0 s</span></div><ul></ul>';dossier.appendChild(progressEl);progressItems={};scanT0=Date.now();clearInterval(scanTimer);scanTimer=setInterval(()=>{const t=progressEl.querySelector('.hd .t');if(t&&!progressEl.classList.contains('complete'))t.textContent=Math.round((Date.now()-scanT0)/1000)+' s';},1000);for(const [id,label] of GROUPS){const g=document.createElement('div');g.className='grp';g.id='g-'+id;g.hidden=true;g.innerHTML=`<h3>${esc(label)}</h3>`;dossier.appendChild(g);groupEl[id]=g;}}
 function progress(id,state){if(!progressEl)return;let it=progressItems[id];if(!it){it=document.createElement('li');it.innerHTML=`<i></i><span>${esc(SRC_LABELS[id]||id)}</span><em class="ms"></em>`;it.dataset.t0=Date.now();progressEl.querySelector('ul').appendChild(it);progressItems[id]=it;}it.className=state;if(state!=='run')it.querySelector('.ms').textContent=((Date.now()-(+it.dataset.t0))/1000).toFixed(1)+' s';const n=Object.values(progressItems),d=n.filter(x=>x.className!=='run').length,bad=n.filter(x=>x.className==='err').length;progressEl.querySelector('.hd span').textContent=d<n.length?`Fetching ${d}/${n.length} sources…`:running?`Analysing… ${n.length} sources in${bad?`, ${bad} failed`:''}`:`Scan complete — ${n.length} sources${bad?`, ${bad} failed`:''}`;}
@@ -1371,15 +1371,17 @@ async function adEconomics(ctx){
     // full water cost: energy (winner) + RO plant capex + consumables + labour
     const Q=p.Q||0;const tds=best.tds||35000;const fresh=!!(best.parts&&!best.parts.ro&&!best.parts.rec);const urbanT=!!(best.parts&&best.parts.ro&&!best.parts.rec);const sw=!fresh&&!urbanT&&tds>=10000;
     const klass=fresh?'fresh':urbanT?'urban':sw?'sea':'brackish';
-    const unit={sea:Q<100?4500:Q<500?3500:Q<2000?2800:2200,brackish:Q<100?2500:Q<500?1900:Q<2000?1500:1200,urban:Q<100?2000:Q<500?1500:Q<2000?1100:900,fresh:Q<100?1200:Q<500?900:Q<2000?700:500}[klass]; // $ per m³/d installed
+    const unit0={sea:Q<100?4500:Q<500?3500:Q<2000?2800:2200,brackish:Q<100?2500:Q<500?1900:Q<2000?1500:1200,urban:Q<100?2000:Q<500?1500:Q<2000?1100:900,fresh:Q<100?1200:Q<500?900:Q<2000?700:500}[klass]; // $ per m³/d installed
     // itemised RO plant capex ($ per m³/d at the ≥2,000 m³/d reference, scaled by size class)
     const RO_ITEMS=fresh?[['Intake & raw-water pumping',120],['Clarification / settling',100],['Filtration (media or ultrafiltration)',150],['Disinfection & post-treatment',40],['Product storage & pumping',60],['Civil works & installation',30]]
                   :urbanT?[['Intake & raw-water pumping',120],['Clarification / settling',120],['Ultrafiltration',200],['Low-pressure RO (polishing)',250],['Disinfection & post-treatment',50],['Product storage & pumping',100],['Civil works & installation',60]]
                   :sw?[['RO trains (HP pumps, energy recovery, membranes, skids)',900],['Seawater intake (beach wells or open intake)',350],['Brine outfall with diffuser',200],['Pre-treatment (media / ultrafiltration)',300],['Post-treatment (degassing, remineralisation, disinfection)',100],['Product storage & pumping',200],['Civil works & installation',150]]
                      :[['RO trains (pumps, membranes, skids)',500],['Wells & raw-water pumping',200],['Brine disposal (deep-well injection)',200],['Pre-treatment (cartridge / media)',80],['Post-treatment',70],['Product storage & pumping',100],['Civil works & installation',50]];
-    const refU=RO_ITEMS.reduce((a,x)=>a+x[1],0),scl=unit/refU;
+    const TT=ctx.train&&ctx.best===best?ctx.train:null;
+    if(TT){RO_ITEMS.length=0;TT.stages.forEach(x=>RO_ITEMS.push([x.g+' — '+x.t.replace(/ · recovery.*$/,''),x.cap]));}
+    const refU=RO_ITEMS.reduce((a,x)=>a+x[1],0),unit=TT?TT.unit:unit0,scl=unit/refU;
     const roSub=Q*unit,roSoft=[['Engineering & studies',p.engPct],['Permits & environmental',p.permPct],['Contingency',p.contPct],['EPC engineering fee',p.epcPct]].map(([l,f])=>({l,f,t:roSub*f}));
-    const capRO=roSub+roSoft.reduce((a,x)=>a+x.t,0);const cons={sea:0.30,brackish:0.18,urban:0.12,fresh:0.05}[klass]; // $/m³ membranes, chemicals, cartridges
+    const capRO=roSub+roSoft.reduce((a,x)=>a+x.t,0);const cons=TT?TT.cons:{sea:0.30,brackish:0.18,urban:0.12,fresh:0.05}[klass]; // $/m³ membranes, chemicals, cartridges
     const labour=Q<100?12000:Q<500?24000:Q<2000?45000:90000; // $/yr operator(s)
     const roOM=roSub*0.025;const Qyr=Q*365*0.9;
     const lcow=o=>(capRO*r.crf+roOM+labour)/Qyr+cons+(o.perM3||0);
@@ -1388,7 +1390,7 @@ async function adEconomics(ctx){
     const COPX=ctx.loc?.cc==='CO'?3228:null;
     const lrows=[r.solar,r.hybrid,r.grid].map(o=>({name:o.name,energy:o.perM3,water:lcow(o),op:opex(o)})).sort((a,b)=>a.water-b.water);const lcS=lrows.find(x=>x.name===r.solar.name);
     const truck=island?12:6,bottle=250; // $/m³ reference: trucked water, bottled 20 L jugs (~$5)
-    out.innerHTML+=`<div style="margin-top:8px"><b>${fresh?'Treatment plant capex':'RO plant capex'}</b> — ${{sea:'seawater RO',brackish:'brackish RO',urban:'river UF + low-pressure RO',fresh:'fresh-water treatment, no RO'}[klass]} class, ${fmt(unit,0)} $ per m³/d installed × ${fmt(Q,0)} m³/d, plus the same engineering, permits, contingency and EPC fee as the energy system (generic placeholder — replace with a supplier quote)</div>`+table(RO_ITEMS.map(([l,v])=>({l,u:v*scl,t:v*scl*Q})).concat([{l:'<i>Installed plant subtotal</i>',u:unit,t:roSub,b:1}],roSoft.map(x=>({l:`${x.l} (${Math.round(x.f*100)}%)`,u:unit*x.f,t:x.t})),[{l:fresh?'<b>Total treatment plant</b>':'<b>Total RO plant</b>',u:capRO/Q,t:capRO,b:1}]),[{h:'Item',f:x=>x.b?x.l:esc(x.l)},{h:'$ per m³/d',num:1,f:x=>fmt(x.u,0)},{h:'Capex $',num:1,f:x=>(x.b?'<b>':'')+fmt(x.t,0)+(x.b?'</b>':'')}])+
+    out.innerHTML+=`<div style="margin-top:8px"><b>${(TT?TT.noRO:fresh)?'Treatment plant capex':'RO plant capex'}</b> — ${TT?TT.label+' (stages from the treatment-train card)':{sea:'seawater RO',brackish:'brackish RO',urban:'river UF + low-pressure RO',fresh:'fresh-water treatment, no RO'}[klass]+' class'}, ${fmt(unit,0)} $ per m³/d installed × ${fmt(Q,0)} m³/d, plus the same engineering, permits, contingency and EPC fee as the energy system (generic placeholder — replace with a supplier quote)</div>`+table(RO_ITEMS.map(([l,v])=>({l,u:v*scl,t:v*scl*Q})).concat([{l:'<i>Installed plant subtotal</i>',u:unit,t:roSub,b:1}],roSoft.map(x=>({l:`${x.l} (${Math.round(x.f*100)}%)`,u:unit*x.f,t:x.t})),[{l:fresh?'<b>Total treatment plant</b>':'<b>Total RO plant</b>',u:capRO/Q,t:capRO,b:1}]),[{h:'Item',f:x=>x.b?x.l:esc(x.l)},{h:'$ per m³/d',num:1,f:x=>fmt(x.u,0)},{h:'Capex $',num:1,f:x=>(x.b?'<b>':'')+fmt(x.t,0)+(x.b?'</b>':'')}])+
       `<div style="margin-top:8px"><b>Water cost</b> — operating cost (no capital recovery, as utilities usually quote) and full cost (LCOW, incl. RO plant and energy-system capital); consumables ${fmt(cons,2)} $/m³, plant maintenance 2.5 %/yr, operators ${fmt(labour,0)} $/yr, 90 % availability.</div>`+table(lrows,[{h:'Powered by',f:x=>esc(x.name)},{h:'Energy $/m³',num:1,f:x=>fmt(x.energy,2)},{h:'Operating $/m³',num:1,f:x=>fmt(x.op,2)+(COPX?` <span class="hint">(${fmt(x.op*COPX,0)} COP)</span>`:'')},{h:'Full cost $/m³',num:1,f:x=>'<b>'+fmt(x.water,2)+'</b>'+(COPX?` <span class="hint">(${fmt(x.water*COPX,0)} COP)</span>`:'')}])+`<div class="hint">Benchmarks: trucked water ~${truck} $/m³ (${island?'island':'mainland'}), bottled/jug water ~${bottle} $/m³, utility tariffs 0.5–3 $/m³. With the off-grid solar design, full cost ${fmt(lcS.water,2)} $/m³ ${lcS.water<truck?'is '+fmt(truck/lcS.water,1)+'× cheaper than trucked water':'is not below trucked water'}. Included: ${fresh?'treatment plant':'RO plant'} (intake, ${fresh?'':'brine disposal, '}treatment, storage), energy system with engineering, permits, contingency and EPC fee. Excluded: land, distribution network, freight/duties/taxes, financing margin.</div>`;
     ctx.econ={win:win.name,breakeven:r.breakeven,tariff:p.tariff,solar:r.solar,grid:r.grid,hybrid:r.hybrid,lcow:lcS.water,opex:lcS.op,solarName:r.solar.name,gridPv:lrows.find(x=>x.name===r.hybrid.name),gridOnly:lrows.find(x=>x.name===r.grid.name),truck,cop:COPX};};
   wrap.addEventListener('input',run);run();
@@ -1433,7 +1435,7 @@ function adFeedOptions(ctx){
     if(kind==='sea'||(t!=null&&t>=30000))p.margin=0.15;
     const tot=Object.values(p).reduce((a,b)=>a+b,0);
     return Object.assign(p,{total:Math.round(tot*10+1e-9)/10,rec,brineVol:bv,disp,brineTds:rec&&t?t/(1-rec):null});};
-  const mk=(kind,t)=>{const p=secParts(kind,t);return {sec:p.total,parts:p};};
+  const mk=(kind,t)=>{const p=secParts(kind,t);return {sec:p.total,parts:p,kind};};
   if(ctx.coast)cands.push({src:'Seawater (coastline within radius)',tds:35000,...mk('sea',35000)});
   if(ctx.gwTDS!=null)cands.push({src:'Groundwater — wells sampled nearby (median'+(ctx.gwTDSsrc?', '+ctx.gwTDSsrc:'')+')',tds:ctx.gwTDS,...mk('well',ctx.gwTDS)});
   if(ctx.swTDS!=null)cands.push({src:'Surface water — streams sampled nearby (median'+(ctx.swTDSsrc?', '+ctx.swTDSsrc:'')+')',tds:ctx.swTDS,...mk('surface',ctx.swTDS)});
@@ -1472,6 +1474,96 @@ function adFeedOptions(ctx){
 }
 
 // ---------- global static datasets in the Supabase cache ----------
+// ---- Treatment train: which pre-treatment, membrane step and post-treatment fit the best feed source ----
+// Rules and unit costs: project doc "treatment-train-selection" (theses, reviews and design manuals; costs are placeholders
+// in $ per m³/d of product at the ≥2,000 m³/d reference, except the calcite contactor, from the Texas TWDB study).
+const TT_SIZE=Q=>Q<100?2.0:Q<500?1.6:Q<2000?1.27:1;
+function treatmentTrain(ctx){
+  const b=ctx.best;if(!b||b.sec==null||!b.kind)return null;
+  const Q=ctx.Q||0,tds=b.tds||0,r=ctx.r||10,st=[],confirm=[],notes=[];
+  const add=(g,t,why,cap,cons,as)=>st.push({g,t,why,cap,cons:cons||0,as:!!as});
+  const city=!!ctx.popCity||(ctx.wpRadius||0)>100000,nWw=ctx.hw&&ctx.hw.n||0,ucw=ctx.aq&&ctx.aq.ucw_cat!=null?ctx.aq.ucw_cat:null;
+  const post=(degas)=>{if(degas)add('Post-treatment','Degassing tower','strips carbon dioxide and any hydrogen sulfide from the RO water and raises its pH',30,0);
+    add('Post-treatment',Q>20000?'Lime + CO₂ remineralisation':'CO₂ + calcite (limestone) contactor, caustic trim','RO water has almost no minerals and is corrosive; a calcite contactor is the simplest option to run at this size'+(b.kind==='well'?' (blending with filtered raw water is cheaper where the raw water is clean)':''),110,0.04);
+    add('Post-treatment','Disinfection (chlorine)','protects the water in storage and in the network',15,0.008);};
+  let label,noRO=false;
+  if(b.kind==='sea'){label='seawater RO';
+    const why=[];if(city)why.push('a city on this coast');if(nWw)why.push(`${nWw} wastewater plant${nWw>1?'s':''} within ${r} km`);if(ucw!=null&&ucw>=3&&city)why.push('a high share of sewage discharged untreated (Aqueduct)');
+    const heavy=why.length>0;
+    add('Intake','Open sea intake with screens','default assumption. On a sandy coast, beach wells are worth investigating for a plant this size: the seabed filters the water and can replace the filtration stage below (needs a coastal geology check)',350,0,true);
+    if(heavy)add('Pre-treatment','Dissolved air flotation + ultrafiltration',`${why.join(', ')}: expect variable water with organics, algae and oil. Flotation removes 90–99% of algae; ultrafiltration gives a stable feed whatever the raw water`,370,0.05,true);
+    else add('Pre-treatment','Coagulation + dual-media filter (one stage)','open coast with no city or wastewater discharge mapped nearby, so clean and stable water is assumed. Upgrade to flotation + ultrafiltration if algal blooms occur (not in open data yet)',170,0.025,true);
+    add('Pre-treatment','Cartridge filters, antiscalant and dechlorination dosing','last protection before the membranes; on every plant',40,0.015);
+    add('Membranes','Seawater RO, single pass, with energy recovery · recovery 42%','salinity about 35 g/L; recovery from the reference design',900,0.15);
+    post(false);
+    add('Brine','Sea outfall with diffuser','about 1.4 m³ of brine per m³ of water, at ~60 g/L',200,0);
+    add('Storage & civil','Product storage and pumping',"2 days' storage",200,0);add('Storage & civil','Civil works and installation','',150,0);
+    confirm.push('silt density index and turbidity over a full year','organic carbon and algal bloom history','oil and hydrocarbons if a port is nearby','boron, if the water is used for irrigation');
+  }else if(b.kind==='well'&&tds<1000){label='fresh groundwater treatment, no RO';noRO=true;
+    add('Intake','Boreholes and pumps','',200,0);
+    add('Treatment','Cartridge or media filtration','groundwater is normally clear; add iron and manganese removal if they are present',100,0.01,true);
+    add('Post-treatment','Disinfection (chlorine)','protects the water in storage and in the network',40,0.008);
+    add('Storage & civil','Product storage and pumping','',60,0);add('Storage & civil','Civil works and installation','',30,0);
+    confirm.push('iron and manganese','nitrate, fluoride and arsenic','bacteriology','sustainable yield of the well');
+  }else if(b.kind==='well'){const saline=tds>=10000,rec=tds<3000?80:tds<10000?75:60;label=saline?'saline groundwater RO':'brackish groundwater RO';
+    add('Intake','Boreholes and pumps','',200,0);
+    add('Pre-treatment','Cartridge filters + antiscalant','groundwater is normally clear, so no filtration stage is assumed. Add an oxidation + greensand filter (about $90 per m³/d) if iron or manganese exceed ~0.05 mg/L',40,0.015,true);
+    add('Membranes',saline?`Seawater-type RO membranes · recovery ${rec}%`:`Brackish RO, two stages · recovery ${rec}%`,`salinity about ${fmt(tds/1000,1)} g/L${!saline&&tds<2000?'; nanofiltration is an option if hardness is the only problem':''}; high silica would force a lower recovery`,saline?650:450,saline?0.09:0.055);
+    post(true);
+    if(ctx.coast)add('Brine','Sea outfall','coast within the scan radius',80,0);else add('Brine','Deep-well injection','inland site: no sea outfall; needs a suitable deep formation and a permit',200,0,true);
+    add('Storage & civil','Product storage and pumping','',100,0);add('Storage & civil','Civil works and installation','',50,0);
+    confirm.push('iron and manganese','silica, hardness, sulfate, barium and strontium (they set the recovery)','hydrogen sulfide','silt density index','sustainable yield and salinity trend of the aquifer');
+  }else if(b.kind==='urban'){label='river treatment with ultrafiltration and low-pressure RO';
+    add('Intake','River intake and raw-water pumping','upstream of the tidal reach and of the main sewage discharges',120,0);
+    add('Pre-treatment','Coagulation + clarifier','removes the sediment load, which varies with rain',120,0.02);
+    add('Pre-treatment','Ultrafiltration','a river below a town carries sewage: ultrafiltration removes pathogens and fine particles',200,0.03,true);
+    add('Membranes','Low-pressure RO or nanofiltration','removes dissolved pollutants (pesticides, sewage residues) that filtration leaves',250,0.04,true);
+    add('Post-treatment','Remineralisation + disinfection','',50,0.03);
+    add('Storage & civil','Product storage and pumping','',100,0);add('Storage & civil','Civil works and installation','',60,0);
+    confirm.push('turbidity range over the wet and dry seasons','organic carbon, ammonia, pesticides and metals','bacteriology','dry-season flow');
+  }else if(b.kind==='surface'&&tds<1000){label='fresh surface-water treatment, no RO';noRO=true;
+    add('Intake','River or lake intake and raw-water pumping','',120,0);
+    add('Treatment','Coagulation + clarifier','removes the sediment load, which varies with rain',100,0.02);
+    add('Treatment','Media filtration or ultrafiltration','ultrafiltration if pathogens or fine particles are a concern',150,0.015,true);
+    add('Post-treatment','Disinfection (chlorine)','protects the water in storage and in the network',40,0.008);
+    add('Storage & civil','Product storage and pumping','',60,0);add('Storage & civil','Civil works and installation','',30,0);
+    confirm.push('turbidity range over the wet and dry seasons','organic carbon, pesticides and metals','bacteriology','dry-season flow and water rights');
+  }else if(b.kind==='surface'){label='brackish surface-water RO';
+    add('Intake','Surface intake and raw-water pumping','',120,0);
+    add('Pre-treatment','Coagulation + clarifier','',100,0.02);add('Pre-treatment','Ultrafiltration','surface water varies; ultrafiltration gives the RO a stable feed',200,0.03,true);
+    add('Membranes','Brackish RO, two stages · recovery 75%',`salinity about ${fmt(tds/1000,1)} g/L`,450,0.055);
+    post(false);
+    if(ctx.coast)add('Brine','Sea outfall','coast within the scan radius',80,0);else add('Brine','Deep-well injection','inland site: no sea outfall',200,0,true);
+    add('Storage & civil','Product storage and pumping','',100,0);add('Storage & civil','Civil works and installation','',50,0);
+    confirm.push('turbidity and organic carbon over a year','major ions and silica','bacteriology');
+  }else if(b.kind==='reuse'){label='wastewater reuse (ultrafiltration + RO + UV)';
+    add('Intake','Effluent pumping from the existing wastewater plant','',60,0);
+    add('Pre-treatment','Ultrafiltration','removes particles and pathogens and protects the RO',230,0.03);
+    add('Membranes','Low-pressure RO · recovery 80%','removes salts and dissolved pollutants',400,0.05);
+    add('Post-treatment','UV with advanced oxidation','destroys the small organic molecules that pass through RO; standard for potable reuse',150,0.02);
+    add('Post-treatment','Remineralisation + disinfection','',95,0.04);
+    add('Brine','Concentrate to the sewer outfall','',60,0);
+    add('Storage & civil','Product storage and pumping','',100,0);add('Storage & civil','Civil works and installation','',60,0);
+    notes.push('Drinking-water use is potable reuse and needs regulatory approval. For irrigation or industry, ultrafiltration + UV alone is enough and costs far less.');
+    confirm.push('effluent quality from the wastewater plant (ammonia, organic carbon, salinity)','what reuse the regulator allows');
+  }else return null;
+  const refU=st.reduce((a,x)=>a+x.cap,0),f=TT_SIZE(Q);
+  return {label,noRO,stages:st,confirm,notes,refU,f,unit:refU*f,cons:st.reduce((a,x)=>a+x.cons,0),heavy:st.some(x=>/flotation/.test(x.t)),
+    short:st.filter(x=>/Pre-treatment|Treatment|Membranes|Post-treatment/.test(x.g)).map(x=>x.t.replace(/ ·.*$/,'').replace(/,.*$/,'')).join(' → ')};
+}
+function adTreatment(ctx){
+  if(cards.tt){cards.tt.el.remove();delete cards.tt;}
+  const T=ctx.train=treatmentTrain(ctx);if(!T)return;
+  const c=card('tt','Treatment train — pre-treatment, membranes, post-treatment','energy');const Q=ctx.Q||0;
+  setStatus(c,`${T.label} · ${fmt(T.unit,0)} $ per m³/d`,'ok');
+  html(c,`<div>For <b>${esc(ctx.best.src.split(' — ')[0])}</b>, ${fmt(Q,0)} m³/d.</div>`+table(T.stages,[{h:'Stage',f:x=>esc(x.g)},{h:'Type selected',f:x=>'<b>'+esc(x.t)+'</b>'+(x.as?' <span class="pill none">assumed</span>':'')},{h:'Why',f:x=>esc(x.why)},{h:'Capex $ per m³/d',num:1,f:x=>fmt(x.cap*T.f,0)},{h:'Consumables $/m³',num:1,f:x=>x.cons?fmt(x.cons,3):'—'}])+
+    `<div style="margin-top:6px"><b>Installed plant: ${fmt(T.unit,0)} $ per m³/d → ${fmt(T.unit*Q,0)} $</b> before engineering, permits, contingency and EPC fee (added in the Energy cost card) · consumables ${fmt(T.cons,2)} $/m³.</div>
+    <div style="margin-top:6px"><b>To confirm with a feed-water analysis before design:</b> ${T.confirm.map(esc).join('; ')}.</div>
+    ${T.notes.map(n=>`<div class="hint">${esc(n)}</div>`).join('')}
+    <div class="hint">The types are chosen from the kind of source and what open data shows around it (city, wastewater discharges, coast). Open data rarely includes the silt index, iron, silica or boron, so stages marked "assumed" are the usual choice for this source, not a finding. Unit costs are generic placeholders${T.f>1?` (×${T.f} for a plant this small)`:''}, to be replaced by supplier quotes; the calcite contactor cost comes from a Texas Water Development Board study.</div>
+    <div class="hint"><b>Sewage side (not costed here):</b> about 80% of the water supplied comes back as sewage (~${fmt(Q*0.8,0)} m³/d). For a hotel, estate or town, a moving-bed or membrane bioreactor followed by UV gives irrigation-grade water (roughly 0.2–1.5 kWh/m³) and reduces the fresh water the RO plant must produce; septic tanks alone are never enough for reuse.</div>`);
+  src(c,'AquaScout treatment selection rules — sources in the project guide (theses, reviews, TWDB manuals)');
+}
 async function adHydroWaste(lat,lon,r){
   const c=card('hw','Wastewater treatment plants (HydroWASTE)','sources',{closed:true});
   try{const rows=await sbRpc('bulk_near',{theme_in:'wwtp',lat,lon,km:Math.max(r,15),lim:50});
@@ -1681,6 +1773,7 @@ function renderBrief(ctx){
   if(ctx.ds?.nearest)verdict.push(`An existing desalination plant (${esc(ctx.ds.nearest.name)}) operates ${fmt(ctx.ds.nearest.d,0)} km away — a reference for feed water, permits and operators.`);
   if(ctx.grid){const gd=ctx.grid;if(gd.cls==='zni')verdict.push(`The locality is in Colombia's non-interconnected zone with about ${fmt(gd.zni?.hMed,0)} h/day of generator service, so a solar-battery plant is the realistic design and can share the existing genset.`);else if(gd.cls==='unmapped')verdict.push(`No grid line is mapped in OpenStreetMap here, although the country is ${fmt(gd.wb['EG.ELC.ACCS.ZS'].v,0)} % electrified — confirm the nearest line before choosing between hybrid and off-grid.`);else if(gd.cls==='none'||gd.cls==='far')verdict.push(`No grid line is mapped within reach (${esc(gd.label)}), so plan fully off-grid.`);else if(gd.cls==='near'&&gd.rel==='poor')verdict.push(`The grid is close (${fmt(gd.dLine,1)} km) but nationally unreliable (${esc(gd.rel)}), so keep storage and a standby set.`);else if(gd.cls==='near')verdict.push(`A ${gd.kv?fmt(gd.kv,0)+' kV ':''}line passes ${fmt(gd.dLine,1)} km away${gd.util?' ('+esc(gd.util.name)+')':''}, so a grid-tied PV plant without battery is an option.`);}
   if(ctx.altConcl)verdict.push(`<b>Alternatives:</b> ${esc(ctx.altConcl)}`);
+  if(ctx.train)verdict.push(`Treatment train (${ctx.train.label}): ${esc(ctx.train.short)} — chosen from the type of source${ctx.train.heavy?' and the city or wastewater discharges nearby':''}; confirm with a feed-water analysis.`);
   if(ctx.econ){const E=ctx.econ,cop=v=>E.cop?` (${fmt(v*E.cop,0)} COP)`:'';verdict.push(`Water cost with the off-grid design (${esc(E.solarName.replace(/^Off-grid /,''))}): operating <b>${fmt(E.opex,2)} $/m³</b>${cop(E.opex)}, full cost incl. capital <b>${fmt(E.lcow,2)} $/m³</b>${cop(E.lcow)}${E.gridOnly?`; grid-only power: operating ${fmt(E.gridOnly.op,2)}${cop(E.gridOnly.op)}, full ${fmt(E.gridOnly.water,2)} $/m³`:''}${E.gridPv?`; grid + PV without battery: full ${fmt(E.gridPv.water,2)} $/m³ (depends on grid reliability)`:''}${E.lcow<E.truck?`, versus ~${ctx.econ.truck} $/m³ for trucked water`:''}.`);}
   if(sol&&sol.worst<2.5)verdict.push(`Winter sun is weak (${fmt(sol.worst,1)} kWh/m²/d); expect a large array or seasonal generator use.`);
   b.innerHTML=`<div><div class="place">${esc(name)}</div><div class="sub">${esc(region)} · ${ctx.lat.toFixed(4)}, ${ctx.lon.toFixed(4)} · ${ctx.r} km radius · <a href="#" class="copybrief">copy brief</a> · <a href="#" class="copylink">copy link</a> · <a href="#" class="printbrief">print</a></div></div><div class="kpi">${tiles.filter(Boolean).map(t=>`<div class="${t.cls}"><span class="l">${t.l}</span><span class="v">${t.v}</span><span class="n" title="${t.n.replace(/<[^>]+>/g,'')}">${t.n}</span></div>`).join('')}</div><div class="verdict">${verdict.join(' ')}</div>`;
@@ -1764,6 +1857,7 @@ async function scan(lat,lon){
     if(ctx.gwTDS==null&&salDB.gwTDS!=null){ctx.gwTDS=salDB.gwTDS;ctx.gwTDSsrc='global salinity DB';}
     if(ctx.swTDS==null&&salDB.swTDS!=null){ctx.swTDS=salDB.swTDS;ctx.swTDSsrc='global salinity DB';}
     adFeedOptions(ctx);
+    adTreatment(ctx);
     await adMicrogrid(ctx);
     adAlternatives(ctx);
     if(stopCtl.stopped)throw new Error('stopped');
