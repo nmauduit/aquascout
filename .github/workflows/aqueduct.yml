@@ -1,0 +1,32 @@
+name: Aqueduct 4.0 tiles (yearly / manual)
+on:
+  workflow_dispatch:
+  push:
+    branches: [data-build]
+    paths: ['tools/aqueduct_tiles.py', '.github/workflows/aqueduct.yml']
+  schedule:
+    - cron: '17 5 3 2 *'
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install -q geopandas pyogrio rasterio numpy
+      - name: Download Aqueduct 4.0
+        run: |
+          for u in "https://files.wri.org/aqueduct/aqueduct-4-0-water-risk-data.zip"; do
+            echo "trying $u"
+            if curl -sSL --fail --max-time 1500 --retry 2 -A "AquaScout/0.1 (open-data research tool)" -o aq.zip "$u"; then break; fi
+          done
+          ls -la aq.zip; mkdir aq && cd aq && unzip -q ../aq.zip && find . -maxdepth 3 | head -40
+      - run: python3 tools/aqueduct_tiles.py aq
+      - name: Commit tiles
+        run: |
+          git config user.name "aquascout-bot"; git config user.email "actions@users.noreply.github.com"
+          git add data/aq
+          git diff --cached --quiet && echo "no change" && exit 0
+          git commit -qm "Aqueduct 4.0 tiles refresh"
+          git pull -q --rebase origin "${GITHUB_REF_NAME}"; git push -q origin "HEAD:${GITHUB_REF_NAME}"
