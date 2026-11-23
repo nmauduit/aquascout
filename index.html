@@ -1484,6 +1484,40 @@ async function adHydroWaste(lat,lon,r){
     return {n:rows.filter(x=>x.d_km<=r).length,dis:tot,nearest:rows[0]};
   }catch(e){fail(c,e);return null;}
 }
+// ---- Basin water risk: WRI Aqueduct 4.0, pre-rasterised to 0.05° static tiles (tools/aqueduct_tiles.py) ----
+async function adAqueduct(lat,lon){
+  const c=card('aq','Basin water risk (WRI Aqueduct 4.0)','sources',{closed:true});
+  const SRC=['WRI Aqueduct 4.0 (2023, CC-BY 4.0) — basin-scale model results','https://www.wri.org/research/aqueduct-40-updated-decision-relevant-global-water-risk-indicators'];
+  try{
+    const la=Math.floor(lat/5)*5,lo=Math.floor(lon/5)*5;let t;
+    try{t=await getJSON(`data/aq/${la}_${lo}.json`,{timeout:15000});}catch(e){setStatus(c,'no data here','');html(c,'<div class="hint">Aqueduct has no land data for this area (open sea or outside its coverage).</div>');src(c,...SRC);cov('Basin water risk (Aqueduct)','none','no tile');return null;}
+    const cells=new Int32Array(10000);{let k=0;for(let i=0;i<t.r.length;i+=2){cells.fill(t.r[i],k,k+t.r[i+1]);k+=t.r[i+1];}}
+    const row0=Math.min(99,Math.floor((la+5-lat)/0.05)),col0=Math.min(99,Math.floor((lon-lo)/0.05)),iB=t.f.indexOf('bws_cat');
+    const good=(r,q)=>{if(r<0||r>99||q<0||q>99)return null;const u=cells[r*100+q];return u>=0&&t.u[u][iB]!=null?t.u[u]:null;};
+    let u=good(row0,col0),near=0;
+    for(let d=1;!u&&d<=6;d++){for(let a=-d;a<=d&&!u;a++)for(let b=-d;b<=d&&!u;b++){if(Math.max(Math.abs(a),Math.abs(b))!==d)continue;u=good(row0+a,col0+b);if(u)near=d;}}
+    if(!u){setStatus(c,'no basin data at this point','');html(c,'<div class="hint">No Aqueduct basin value within ~30 km (small island or coastal sliver).</div>');src(c,...SRC);cov('Basin water risk (Aqueduct)','none','no basin value');return null;}
+    const A=Object.fromEntries(t.f.map((f,i)=>[f,u[i]]));
+    const LAB=['low','low–medium','medium–high','high','extremely high'],CLS=['ok','ok','warn','bad','bad'];
+    const pill=(v,arid)=>v==null?'<span class="pill none">no data</span>':v<0?`<span class="pill none">${arid?'arid, low water use':'not applicable'}</span>`:`<span class="pill ${CLS[v]}">${LAB[v]}</span>`;
+    const pct=v=>v==null?'':v>=1?' · withdrawals at or above the renewable supply':` · ${fmt(v*100,v<0.1?1:0)}% of the renewable supply is withdrawn`;
+    const stress=A.bws_cat,sTxt=stress==null?'no data':stress<0?'arid, low water use':LAB[stress];
+    setStatus(c,`water stress ${sTxt}${A.drr_cat!=null&&A.drr_cat>=0?' · drought risk '+LAB[A.drr_cat]:''}${A.gtd_cat!=null&&A.gtd_cat>=2?' · groundwater declining':''}`,stress>=3||A.gtd_cat>=3?'warn':'ok');
+    const gtd=A.gtd_cat!=null&&A.gtd_cat>=0?`${pill(A.gtd_cat)} · water table falling ~${fmt(A.gtd_raw,1)} cm/year (1990–2014 model)`:A.gtd_raw!=null?'<span class="pill none">no significant trend</span>':'<span class="pill none">no data</span> (no major aquifer modelled here)';
+    const fut=(k,r)=>A[k]==null?'—':pill(A[k],1)+(r&&A[r]!=null&&A[k]>=0?` (${fmt(Math.min(A[r],1)*100,A[r]<0.1?1:0)}%)`:'');
+    html(c,`<dl class="kv"><dt>Water stress today</dt><dd>${pill(stress,1)}${stress!=null&&stress>=0?pct(A.bws_raw):''}</dd>
+      <dt>Water depletion</dt><dd>${pill(A.bwd_cat,1)} · share of supply consumed and not returned</dd>
+      <dt>Groundwater table decline</dt><dd>${gtd}</dd>
+      <dt>Drought risk</dt><dd>${pill(A.drr_cat)}</dd>
+      <dt>Variability</dt><dd>year to year ${pill(A.iav_cat)} · within the year ${pill(A.sev_cat)}</dd>
+      <dt>Flood risk</dt><dd>river ${pill(A.rfr_cat)} · coastal ${pill(A.cfr_cat)}</dd>
+      <dt>Untreated wastewater</dt><dd>${pill(A.ucw_cat)} · share of collected sewage discharged untreated</dd>
+      <dt>Water stress outlook</dt><dd>2030 ${fut('bau30_ws_x_c','bau30_ws_x_r')} · 2050 ${fut('bau50_ws_x_c','bau50_ws_x_r')} (business as usual) · 2050 optimistic ${fut('opt50_ws_x_c')} / pessimistic ${fut('pes50_ws_x_c')}</dd></dl>
+      <div class="hint">${near?`No basin value exactly at this point (coastal edge); values from the nearest basin cell ~${near*5} km away. `:''}These are results of a global hydrological model for the whole river basin, not measurements at this site. Water stress compares total withdrawals with the renewable supply of the basin: a low value means the resource exists, not that people are served — a city can face shortages in a low-stress basin when the problem is infrastructure or losses. Small islands and small coastal basins are poorly represented.</div>`);
+    src(c,...SRC);cov('Basin water risk (Aqueduct)','ok',`water stress ${sTxt}`);
+    return {...A,stressTxt:sTxt,near,lab:LAB};
+  }catch(e){fail(c,e);return null;}
+}
 async function adSalinityDB(lat,lon,r){
   const c=card('sal','Measured salinity (global database 1980–2019)','sources',{closed:true});
   const R=Math.max(r,25);
@@ -1636,6 +1670,13 @@ function renderBrief(ctx){
   else if(ctx.localNeed&&ctx.localNeed.est!=null)verdict.push(`Access need here is estimated <b>${esc(ctx.localNeed.level)}</b>: about ${fmt(ctx.localNeed.est,0)}% of people in this ${esc(ctx.localNeed.set)} area likely lack basic drinking water${ctx.localNeed.estSM!=null?` and ${fmt(ctx.localNeed.estSM,0)}% lack safely managed water`:''}.`);
   if(ctx.localNeed&&!ctx.localNeed.cay&&(ctx.localNeed.contLvl||ctx.localNeed.safeLvl)){const n=ctx.localNeed;const weak=!(n.problems&&n.problems.length)&&((n.av!=null&&n.av<80)||(n.safeV!=null&&n.safeV>14)||(n.safeV==null&&n.qual!=null&&n.qual<80));verdict.push(`Supply continuity is <b>${esc(n.contLvl||'unknown')}</b> and safety <b>${esc(n.safeLvl||'unknown')}</b>${weak?' — even connected households are a market for a reliable, treated on-site supply':''}.`);}
   else if(ctx.need?.gapRu!=null&&ctx.need.gapRu>=20)verdict.push(`Nationally, ${fmt(ctx.need.gapRu,0)}% of the rural population lacks safely managed water (JMP), which supports prioritising this region.`);
+  if(ctx.aq&&ctx.aq.bws_cat!=null){const q=ctx.aq,L=q.lab,hasProb=!!(ctx.localNeed&&ctx.localNeed.problems&&ctx.localNeed.problems.length);
+    const up=q.bau50_ws_x_c!=null&&q.bau50_ws_x_c>q.bws_cat&&q.bws_cat>=0?`, rising to ${L[q.bau50_ws_x_c]} by 2050 (business as usual)`:'';
+    if(q.bws_cat>=3)verdict.push(`The river basin is under <b>${L[q.bws_cat]} water stress</b> (Aqueduct model)${up}: fresh sources here are already heavily used, which favours seawater, brackish water or reuse.`);
+    else if(q.bws_cat<0)verdict.push(`The basin is arid with little water use (Aqueduct model): local fresh water is scarce to begin with.`);
+    else if(hasProb&&q.bws_cat<=1)verdict.push(`The river basin itself is not water-stressed (Aqueduct model: ${L[q.bws_cat]}${up}), so the supply problem here is about infrastructure and losses rather than a lack of resource.`);
+    else if(up&&q.bau50_ws_x_c>=3)verdict.push(`Basin water stress is ${L[q.bws_cat]} today${up} (Aqueduct model).`);
+    if(q.gtd_cat!=null&&q.gtd_cat>=2)verdict.push(`Groundwater in the basin is declining (~${fmt(q.gtd_raw,1)} cm/year, Aqueduct model) — check the long-term yield of any well source.`);}
   if(ctx.ds?.nearest)verdict.push(`An existing desalination plant (${esc(ctx.ds.nearest.name)}) operates ${fmt(ctx.ds.nearest.d,0)} km away — a reference for feed water, permits and operators.`);
   if(ctx.grid){const gd=ctx.grid;if(gd.cls==='zni')verdict.push(`The locality is in Colombia's non-interconnected zone with about ${fmt(gd.zni?.hMed,0)} h/day of generator service, so a solar-battery plant is the realistic design and can share the existing genset.`);else if(gd.cls==='unmapped')verdict.push(`No grid line is mapped in OpenStreetMap here, although the country is ${fmt(gd.wb['EG.ELC.ACCS.ZS'].v,0)} % electrified — confirm the nearest line before choosing between hybrid and off-grid.`);else if(gd.cls==='none'||gd.cls==='far')verdict.push(`No grid line is mapped within reach (${esc(gd.label)}), so plan fully off-grid.`);else if(gd.cls==='near'&&gd.rel==='poor')verdict.push(`The grid is close (${fmt(gd.dLine,1)} km) but nationally unreliable (${esc(gd.rel)}), so keep storage and a standby set.`);else if(gd.cls==='near')verdict.push(`A ${gd.kv?fmt(gd.kv,0)+' kV ':''}line passes ${fmt(gd.dLine,1)} km away${gd.util?' ('+esc(gd.util.name)+')':''}, so a grid-tied PV plant without battery is an option.`);}
   if(ctx.altConcl)verdict.push(`<b>Alternatives:</b> ${esc(ctx.altConcl)}`);
@@ -1700,7 +1741,7 @@ async function scan(lat,lon){
     const wp=await wpP;
     const dem=adDemand(osm.places||[],wp);const _pl=(osm.places||[]).filter(p=>p.d!=null);const remoteKm=_pl.length?Math.min(..._pl.map(p=>p.d)):null;
     const gw=await adGlobalGW(lat,lon);await adDepth(lat,lon,osm.coast);
-    const [hw,salDB]=await Promise.all([adHydroWaste(lat,lon,r),adSalinityDB(lat,lon,r)]);
+    const [hw,salDB,aq]=await Promise.all([adHydroWaste(lat,lon,r),adSalinityDB(lat,lon,r),adAqueduct(lat,lon)]);
     const a3=countryA3(cc);const need=await adNeed(a3,cc,loc);const ds=await adDesalNearby(lat,lon);
     const ctx={lat,lon,r,loc,Q:dem.Q,pop:dem.pop,assumed:dem.assumed,popSrc:dem.popSrc,popCity:dem.popCity,wpRadius:wp?wp.radiusPop:null,remoteKm,salineArea:!!gw.saline,need,ds,solar,coast:osm.coast,wells:osm.wells,tds:null,wwtp:false,utility:null,micro:null,wwtpName:null,flow,rivers:(osm.cnt&&(osm.cnt['River']||0))||0};
     const nat=await natP;Object.assign(ctx,nat);
@@ -1717,7 +1758,7 @@ async function scan(lat,lon){
         html(c,`<div class="note"><b>Sizing basis: people without reliable water.</b> ~${fmt(t.base,0)} residents (${esc(t.baseSrc)}) × ${fmt(t.lo,0)}–${fmt(t.hi,0)}% lacking basic or reliable water = <b>~${fmt(t.peopleLo,0)}–${fmt(t.peopleHi,0)} people</b>${t.def?` (upper bound from the documented deficit: ${esc(t.defNote||t.def+'% of demand unmet')})`:t.crisis?' (a documented shortage means the real figure is likely higher)':''}. One plant is sized to serve <b>${fmt(t.target,0)}</b> of them (${fmt(ctx.Q,0)} m³/d at 100 L/person/day + 15% losses)${t.capped?` — capped at one plant's maximum of ${fmt(PLANT_MAX_M3D,0)} m³/d`:''}.${t.plants>1?` Covering the upper estimate would take about <b>${t.plants} plants</b>.`:''}<div class="hint">Plant ceiling ${fmt(PLANT_MAX_M3D,0)} m³/d (1 million US gal/day) is the maximum of the planned system, used for every water source. Shares are the local access gap plus the national continuity gap for this settlement type (JMP); the range runs from overlap (low) to no overlap (high), or to the documented city deficit where one is on record. Enter a population above to size for a specific customer instead.</div></div>`);}}}
     if(!ctx.grid)gridP.then(async g=>{ctx.grid=g;gridStrategy(ctx);if(cards.localneed){cards.localneed.el.remove();delete cards.localneed;}ctx.localNeed=adLocalNeed(ctx,osm,dem);if(cards.econ){cards.econ.el.remove();delete cards.econ;}await adEconomics(ctx);renderBrief(ctx);});
     if(nat.wellsAdd)ctx.wells+=nat.wellsAdd;
-    ctx.wwtp=coverage.some(x=>/Wastewater treatment \((OSM|EPA|ANA)\)/.test(x.topic)&&x.state==='ok')||!!(hw&&hw.n);ctx.hw=hw;
+    ctx.wwtp=coverage.some(x=>/Wastewater treatment \((OSM|EPA|ANA)\)/.test(x.topic)&&x.state==='ok')||!!(hw&&hw.n);ctx.hw=hw;ctx.aq=aq;
     // national samples win; the global database fills gaps
     if(ctx.gwTDS==null&&salDB.gwTDS!=null){ctx.gwTDS=salDB.gwTDS;ctx.gwTDSsrc='global salinity DB';}
     if(ctx.swTDS==null&&salDB.swTDS!=null){ctx.swTDS=salDB.swTDS;ctx.swTDSsrc='global salinity DB';}

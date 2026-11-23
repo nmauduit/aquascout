@@ -1,0 +1,1 @@
+{"source": "WRI Aqueduct 4.0 (2023), CC-BY 4.0", "res_deg": 0.05, "tile_deg": 5, "fields": ["bws_cat", "bwd_cat", "iav_cat", "sev_cat", "gtd_cat", "drr_cat", "rfr_cat", "cfr_cat", "ucw_cat", "bws_raw", "gtd_raw", "w_awr_def_tot_cat", "bau30_ws_x_c", "bau50_ws_x_c", "opt50_ws_x_c", "pes50_ws_x_c", "bau30_ws_x_r", "bau50_ws_x_r"], "tiles": 1447}
